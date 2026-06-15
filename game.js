@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { initDungeon, getDungeonScene, loadFloor, getRoomData, getCurrentFloor, setCurrentFloor, disposeDungeon } from './dungeon.js';
 import { initTown, getTownScene, disposeTown, showNPCDialogue, setNPCInteractionCallback } from './town.js';
-import { initControls, updateControls, getInputState, resetInput, setCameraTarget } from './controls.js';
+import { initControls, updateControls, getInputState, resetInput, setCameraTarget, setCameraMode } from './controls.js';
 import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, setGameBridge } from './entities.js';
 
 // ============================================
@@ -194,6 +194,7 @@ export function enterTown() {
     }
     
     setCameraTarget(player);
+    setCameraMode('follow');
     
     // Restore health in town
     gameData.player.health = gameData.player.maxHealth;
@@ -234,6 +235,7 @@ export function enterDungeon(floor = null) {
     }
     
     setCameraTarget(player);
+    setCameraMode('fps');
     
     // Spawn initial enemies
     spawnEnemiesForRoom('center', getCurrentFloor(), true);
