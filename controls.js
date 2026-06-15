@@ -58,6 +58,55 @@ const cameraSettings = {
 const raycaster = new THREE.Raycaster();
 
 // ============================================
+// CAMERA MODES
+//   'follow'  -> third-person orbit (town)
+//   'fps'     -> first person (dungeon default)
+//   'topdown' -> zoomed-out top-down debug view (dungeon toggle)
+// ============================================
+let cameraMode = 'follow';
+const fps = { yaw: 0, pitch: -0.05, eyeHeight: 1.6, sens: 0.005 };
+const topDown = { height: 55 };
+
+export function setCameraMode(mode) {
+    cameraMode = mode;
+    inputState.cameraRelative = (mode === 'fps');
+    inputState.cameraYaw = fps.yaw;
+    if (camera) {
+        // top-down looks straight down, so orient "north" (-Z) toward screen top
+        if (mode === 'topdown') camera.up.set(0, 0, -1);
+        else camera.up.set(0, 1, 0);
+    }
+}
+
+export function getCameraMode() {
+    return cameraMode;
+}
+
+// Toggle between FPS and top-down (dungeon only)
+export function toggleDungeonCamera() {
+    if (cameraMode === 'follow') return; // no-op in town
+    setCameraMode(cameraMode === 'topdown' ? 'fps' : 'topdown');
+    const btn = document.getElementById('btn-camera-toggle');
+    if (btn) btn.textContent = (cameraMode === 'topdown') ? 'FPS VIEW' : 'TOP-DOWN';
+}
+
+// Apply look input (swipe/mouse drag) according to the active camera mode
+function applyLook(dx, dy) {
+    if (cameraMode === 'fps') {
+        fps.yaw -= dx * fps.sens;
+        fps.pitch -= dy * fps.sens;
+        fps.pitch = Math.max(-1.4, Math.min(1.4, fps.pitch));
+        inputState.cameraYaw = fps.yaw;
+    } else if (cameraMode === 'follow') {
+        cameraSettings.angle -= dx * 0.01;
+        cameraSettings.targetAngle = cameraSettings.angle;
+        cameraSettings.height = Math.max(4, Math.min(15, cameraSettings.height - dy * 0.02));
+        cameraSettings.manualControlTimer = 1.5;
+    }
+    // topdown: look input ignored
+}
+
+// ============================================
 // INITIALIZATION
 // ============================================
 
@@ -176,6 +225,15 @@ function updateJoystickVisual() {
 // ============================================
 
 function setupButtons() {
+    // Camera mode toggle (dungeon)
+    const camToggle = document.getElementById('btn-camera-toggle');
+    if (camToggle) {
+        camToggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            toggleDungeonCamera();
+        });
+    }
+    
     // Jump button
     const jumpBtn = document.getElementById('btn-jump');
     if (jumpBtn) {
@@ -278,18 +336,10 @@ function handleCameraMove(e) {
             const dx = touch.clientX - lastCameraX;
             const dy = touch.clientY - lastCameraY;
             
-            // Rotate camera
-            cameraSettings.angle -= dx * 0.01;
-            cameraSettings.targetAngle = cameraSettings.angle;
-            
-            // Adjust height slightly with vertical swipe
-            cameraSettings.height = Math.max(4, Math.min(15, cameraSettings.height - dy * 0.02));
+            applyLook(dx, dy);
             
             lastCameraX = touch.clientX;
             lastCameraY = touch.clientY;
-            
-            // Keep manual control active
-            cameraSettings.manualControlTimer = 1.5;
             break;
         }
     }
@@ -327,6 +377,7 @@ function setupKeyboard() {
         if (e.code === 'Digit2') inputState.ability2 = true;
         if (e.code === 'Digit3') inputState.ability3 = true;
         if (e.code === 'KeyE') triggerNPCInteraction();
+        if (e.code === 'KeyV') toggleDungeonCamera();
     });
     
     window.addEventListener('keyup', (e) => {
@@ -343,10 +394,12 @@ function setupKeyboard() {
     // Mouse for camera on desktop
     let mouseDown = false;
     let lastMouseX = 0;
+    let lastMouseY = 0;
     
     canvas.addEventListener('mousedown', (e) => {
         mouseDown = true;
         lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
         cameraSettings.manualControlTimer = 1.5;
     });
     
@@ -357,10 +410,11 @@ function setupKeyboard() {
     window.addEventListener('mousemove', (e) => {
         if (mouseDown) {
             const dx = e.clientX - lastMouseX;
-            cameraSettings.angle -= dx * 0.005;
-            cameraSettings.targetAngle = cameraSettings.angle;
+            const dy = e.clientY - lastMouseY;
+            // mouse is less sensitive than touch in follow mode; applyLook handles both
+            applyLook(cameraMode === 'follow' ? dx * 0.5 : dx, cameraMode === 'follow' ? dy * 0.5 : dy);
             lastMouseX = e.clientX;
-            cameraSettings.manualControlTimer = 1.5;
+            lastMouseY = e.clientY;
         }
     });
 }
@@ -429,6 +483,47 @@ export function updateControls(delta, target, scene) {
     
     cameraTarget = target;
     
+    if (cameraMode === 'fps') {
+        // First person: camera sits at the player's eye, body hidden
+        target.visible = false;
+        target.rotation.y = fps.yaw;            // body + attacks face the view
+        inputState.cameraRelative = true;
+        inputState.cameraYaw = fps.yaw;
+        updateFPSCamera(target);
+    } else if (cameraMode === 'topdown') {
+        // Zoomed-out top-down debug view
+        target.visible = true;
+        inputState.cameraRelative = false;
+        updateTopDownCamera(target);
+    } else {
+        // Third-person follow (town)
+        target.visible = true;
+        inputState.cameraRelative = false;
+        updateFollowCamera(delta, target, scene);
+        // NPC proximity prompts only matter in the follow/town view
+        checkNPCInteraction(target.position);
+    }
+}
+
+function updateFPSCamera(target) {
+    const ex = target.position.x;
+    const ey = target.position.y + fps.eyeHeight;
+    const ez = target.position.z;
+    camera.position.set(ex, ey, ez);
+    
+    const cp = Math.cos(fps.pitch);
+    const fx = Math.sin(fps.yaw) * cp;
+    const fy = Math.sin(fps.pitch);
+    const fz = Math.cos(fps.yaw) * cp;
+    camera.lookAt(ex + fx, ey + fy, ez + fz);
+}
+
+function updateTopDownCamera(target) {
+    camera.position.set(target.position.x, target.position.y + topDown.height, target.position.z);
+    camera.lookAt(target.position.x, target.position.y, target.position.z);
+}
+
+function updateFollowCamera(delta, target, scene) {
     // Manual control timer
     if (cameraSettings.manualControlTimer > 0) {
         cameraSettings.manualControlTimer -= delta;
@@ -439,46 +534,31 @@ export function updateControls(delta, target, scene) {
         const isMoving = Math.abs(inputState.moveX) > 0.1 || Math.abs(inputState.moveZ) > 0.1;
         
         if (isMoving) {
-            // Calculate desired angle (behind player's movement direction)
             const playerFacingAngle = Math.atan2(inputState.moveX, inputState.moveZ);
             cameraSettings.targetAngle = playerFacingAngle + Math.PI;
         }
         
-        // Smooth interpolation toward target angle
         let angleDiff = cameraSettings.targetAngle - cameraSettings.angle;
-        
-        // Normalize to -PI to PI for shortest rotation
         while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
         while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-        
         cameraSettings.angle += angleDiff * delta * cameraSettings.angleSmoothing;
     }
     
-    // Calculate desired camera position
     const desiredPos = new THREE.Vector3(
         target.position.x + Math.sin(cameraSettings.angle) * cameraSettings.distance,
         target.position.y + cameraSettings.height,
         target.position.z + Math.cos(cameraSettings.angle) * cameraSettings.distance
     );
     
-    // Check for wall collision
     const finalPos = checkCameraCollision(target.position, desiredPos, scene);
-    
-    // Smooth camera movement
     camera.position.lerp(finalPos, cameraSettings.smoothing);
     
-    // Look at player
     const lookTarget = new THREE.Vector3(
         target.position.x,
         target.position.y + 1.2,
         target.position.z
     );
     camera.lookAt(lookTarget);
-    
-    // Check NPC interaction in town
-    if (scene && scene.name !== 'dungeon') {
-        checkNPCInteraction(target.position);
-    }
 }
 
 function checkCameraCollision(playerPos, desiredCamPos, scene) {
