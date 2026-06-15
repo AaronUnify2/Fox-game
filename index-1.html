@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="screen-orientation" content="landscape">
+    <title>Echoes of the Obelisk</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="game-container">
+        <!-- Title Screen -->
+        <div id="title-screen">
+            <div class="title-content">
+                <h1>ECHOES OF THE OBELISK</h1>
+                <p class="tagline">Beneath the spire, the dream-tree stirs</p>
+                <div class="title-buttons">
+                    <button id="btn-new-game" onclick="gameAPI.startNewGame()">NEW GAME</button>
+                    <button id="btn-continue" class="hidden" onclick="gameAPI.continueGame()">CONTINUE</button>
+                </div>
+                <p class="controls-hint">
+                    Mobile: Joystick to move, swipe right side to look<br>
+                    Desktop: WASD + Mouse
+                </p>
+            </div>
+        </div>
+
+        <!-- Game UI (Dungeon) -->
+        <div id="game-ui" class="hidden">
+            <!-- Top bar -->
+            <div id="top-bar">
+                <div id="health-bar">
+                    <div id="health-fill"></div>
+                    <span id="health-text">100/100</span>
+                </div>
+                <div id="floor-display">Floor 1</div>
+                <div id="xp-display">XP: 0</div>
+            </div>
+
+            <!-- Notification -->
+            <div id="notification" class="hidden"></div>
+
+            <!-- Action buttons (right side) -->
+            <div id="action-buttons">
+                <button id="btn-jump" class="action-btn">JUMP</button>
+                <button id="btn-attack" class="action-btn attack-btn">ATTACK</button>
+            </div>
+
+            <div id="ability-buttons">
+                <button id="btn-spread" class="ability-btn hidden">SPREAD</button>
+                <button id="btn-burst" class="ability-btn hidden">BURST</button>
+                <button id="btn-mega" class="ability-btn hidden">MEGA</button>
+            </div>
+
+            <!-- Damage flash -->
+            <div id="damage-flash" class="hidden"></div>
+        </div>
+
+        <!-- Town UI -->
+        <div id="town-ui" class="hidden">
+            <div id="town-top-bar">
+                <div id="town-xp">XP: 0</div>
+                <div id="town-floor">Highest Floor: 1</div>
+            </div>
+
+            <!-- Interact button -->
+            <button id="btn-interact" class="hidden">Talk</button>
+            <button id="btn-enter-dungeon" class="hidden">ENTER THE OBELISK</button>
+        </div>
+
+        <!-- Shared Controls (visible in both dungeon and town) -->
+        <div id="shared-controls" class="hidden">
+            <!-- Joystick (left side) -->
+            <div id="joystick-zone">
+                <div id="joystick-base">
+                    <div id="joystick-knob"></div>
+                </div>
+            </div>
+
+            <!-- Camera zone (right side for swipe) -->
+            <div id="camera-zone"></div>
+        </div>
+
+        <!-- Dialogue Box -->
+        <div id="dialogue-box" class="hidden">
+            <div id="dialogue-content">
+                <h3 id="dialogue-speaker"></h3>
+                <p id="dialogue-text"></p>
+                <button id="dialogue-close">Continue</button>
+            </div>
+        </div>
+
+        <!-- Shop/NPC Menu -->
+        <div id="shop-menu" class="hidden"></div>
+
+        <!-- Floor Select -->
+        <div id="floor-select" class="hidden"></div>
+
+        <!-- Floor Complete -->
+        <div id="floor-complete" class="hidden"></div>
+
+        <!-- Death Screen -->
+        <div id="death-screen" class="hidden">
+            <div class="death-content">
+                <h2>FALLEN</h2>
+                <p>The obelisk consumes your progress.</p>
+                <p>XP Lost: <span id="death-xp-lost">0</span></p>
+                <button onclick="gameAPI.retryFloor()">RETRY FLOOR</button>
+                <button onclick="gameAPI.returnToTown()">RETURN TO TOWN</button>
+            </div>
+        </div>
+
+        <!-- Victory Screen -->
+        <div id="victory-screen" class="hidden">
+            <div class="victory-content">
+                <h2>THE DREAM-TREE AWAKENS</h2>
+                <p>The obelisk crumbles. Light floods the depths.</p>
+                <p>You have freed the ancient consciousness.</p>
+                <p>What dreams will it bring to the waking world?</p>
+                <button onclick="gameAPI.returnToTown()">RETURN TO TOWN</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
+    <script type="module" src="game.js"></script>
+</body>
+</html>

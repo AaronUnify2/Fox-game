@@ -1,0 +1,719 @@
+/* ============================================
+   ECHOES OF THE OBELISK - Styles
+   Mobile-first, landscape orientation
+   ============================================ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0a0a12;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #e0e0e0;
+    touch-action: none;
+}
+
+#game-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* ============================================
+   TITLE SCREEN
+   ============================================ */
+
+#title-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #0a0a12 0%, #1a1a2e 50%, #0a0a12 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.title-content {
+    text-align: center;
+    padding: 2rem;
+}
+
+.title-content h1 {
+    font-size: clamp(1.5rem, 5vw, 3rem);
+    color: #00ffff;
+    text-shadow: 0 0 20px #00ffff, 0 0 40px #0088aa;
+    margin-bottom: 0.5rem;
+    letter-spacing: 0.2em;
+}
+
+.tagline {
+    font-size: clamp(0.8rem, 2vw, 1.2rem);
+    color: #8899aa;
+    margin-bottom: 2rem;
+    font-style: italic;
+}
+
+.title-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+}
+
+.title-buttons button {
+    padding: 1rem 3rem;
+    font-size: 1.2rem;
+    background: linear-gradient(180deg, #1a2a3a 0%, #0a1a2a 100%);
+    border: 2px solid #00ffff;
+    color: #00ffff;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.title-buttons button:hover,
+.title-buttons button:active {
+    background: #00ffff;
+    color: #0a0a12;
+    box-shadow: 0 0 20px #00ffff;
+}
+
+.controls-hint {
+    margin-top: 2rem;
+    font-size: 0.8rem;
+    color: #667788;
+    line-height: 1.5;
+}
+
+/* ============================================
+   GAME UI - TOP BAR
+   ============================================ */
+
+#top-bar, #town-top-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+    z-index: 10;
+}
+
+#health-bar {
+    width: 200px;
+    height: 24px;
+    background: rgba(0,0,0,0.6);
+    border: 2px solid #00ffff;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+}
+
+#health-fill {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #00aa88 0%, #00ffaa 100%);
+    transition: width 0.3s;
+}
+
+#health-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.8rem;
+    font-weight: bold;
+    text-shadow: 1px 1px 2px black;
+}
+
+#floor-display, #town-floor {
+    font-size: 1rem;
+    color: #00ffff;
+    text-shadow: 0 0 10px #00ffff;
+}
+
+#xp-display, #town-xp {
+    font-size: 1rem;
+    color: #ffcc00;
+    text-shadow: 0 0 10px #ffcc00;
+}
+
+/* ============================================
+   NOTIFICATION
+   ============================================ */
+
+#notification {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.8rem 2rem;
+    background: rgba(0,0,0,0.9);
+    border: 2px solid #ff4444;
+    color: #ff4444;
+    font-size: 1.2rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    z-index: 20;
+    animation: pulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+    from { box-shadow: 0 0 10px #ff4444; }
+    to { box-shadow: 0 0 30px #ff4444; }
+}
+
+/* ============================================
+   JOYSTICK
+   ============================================ */
+
+#joystick-zone {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    width: 150px;
+    height: 150px;
+    z-index: 20;
+}
+
+#joystick-base {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 120px;
+    height: 120px;
+    background: rgba(0,255,255,0.1);
+    border: 3px solid rgba(0,255,255,0.4);
+    border-radius: 50%;
+}
+
+#joystick-knob {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 50px;
+    height: 50px;
+    background: radial-gradient(circle, rgba(0,255,255,0.8) 0%, rgba(0,255,255,0.4) 100%);
+    border: 2px solid #00ffff;
+    border-radius: 50%;
+    box-shadow: 0 0 15px rgba(0,255,255,0.5);
+}
+
+/* ============================================
+   CAMERA ZONE
+   ============================================ */
+
+#camera-zone {
+    position: absolute;
+    right: 0;
+    top: 50px;
+    bottom: 0;
+    width: 40%;
+    z-index: 5;
+}
+
+/* ============================================
+   ACTION BUTTONS
+   ============================================ */
+
+#action-buttons {
+    position: absolute;
+    right: 20px;
+    bottom: 20px;
+    display: flex;
+    gap: 15px;
+    z-index: 20;
+}
+
+.action-btn {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.6);
+    border: 3px solid rgba(0,255,255,0.6);
+    color: #00ffff;
+    font-size: 0.8rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+
+.action-btn:active {
+    background: rgba(0,255,255,0.3);
+    transform: scale(0.95);
+}
+
+.attack-btn {
+    width: 90px;
+    height: 90px;
+    border-color: #ff6644;
+    color: #ff6644;
+}
+
+.attack-btn:active {
+    background: rgba(255,102,68,0.3);
+}
+
+/* ============================================
+   ABILITY BUTTONS
+   ============================================ */
+
+#ability-buttons {
+    position: absolute;
+    right: 130px;
+    bottom: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 20;
+}
+
+.ability-btn {
+    width: 70px;
+    height: 50px;
+    background: rgba(0,0,0,0.6);
+    border: 2px solid rgba(191,0,255,0.6);
+    color: #bf00ff;
+    font-size: 0.7rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.1s;
+    border-radius: 8px;
+}
+
+.ability-btn:active {
+    background: rgba(191,0,255,0.3);
+}
+
+.ability-btn.active {
+    animation: abilityPulse 0.3s ease-in-out infinite alternate;
+}
+
+@keyframes abilityPulse {
+    from { box-shadow: 0 0 5px #bf00ff; }
+    to { box-shadow: 0 0 20px #bf00ff; }
+}
+
+/* ============================================
+   DAMAGE FLASH
+   ============================================ */
+
+#damage-flash {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255,0,0,0.3);
+    pointer-events: none;
+    z-index: 30;
+}
+
+/* ============================================
+   TOWN UI
+   ============================================ */
+
+#btn-interact, #btn-enter-dungeon {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 1rem 2rem;
+    background: rgba(0,0,0,0.8);
+    border: 2px solid #00ffff;
+    color: #00ffff;
+    font-size: 1rem;
+    cursor: pointer;
+    z-index: 20;
+    transition: all 0.2s;
+}
+
+#btn-enter-dungeon {
+    border-color: #ffcc00;
+    color: #ffcc00;
+}
+
+#btn-interact:active, #btn-enter-dungeon:active {
+    background: rgba(0,255,255,0.2);
+}
+
+/* ============================================
+   DIALOGUE BOX
+   ============================================ */
+
+#dialogue-box {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0.9) 0%, rgba(10,10,20,0.95) 100%);
+    border-top: 3px solid #00ffff;
+    padding: 1.5rem;
+    z-index: 50;
+}
+
+#dialogue-content {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+#dialogue-speaker {
+    color: #00ffff;
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+#dialogue-text {
+    color: #cccccc;
+    font-size: 1rem;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+}
+
+#dialogue-close {
+    padding: 0.5rem 2rem;
+    background: transparent;
+    border: 2px solid #00ffff;
+    color: #00ffff;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+#dialogue-close:active {
+    background: rgba(0,255,255,0.2);
+}
+
+/* ============================================
+   SHOP/NPC MENU
+   ============================================ */
+
+#shop-menu, #floor-select {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(10,10,20,0.95);
+    border: 3px solid #00ffff;
+    padding: 2rem;
+    min-width: 300px;
+    max-width: 90%;
+    max-height: 80%;
+    overflow-y: auto;
+    z-index: 60;
+}
+
+#shop-menu h3, #floor-select h3 {
+    color: #00ffff;
+    text-align: center;
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.npc-dialogue {
+    color: #888888;
+    font-style: italic;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.shop-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    margin-bottom: 1.5rem;
+}
+
+.shop-items button, .floor-buttons button {
+    padding: 1rem;
+    background: rgba(0,0,0,0.5);
+    border: 2px solid #4488aa;
+    color: #88ccee;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s;
+}
+
+.shop-items button:hover:not(:disabled),
+.floor-buttons button:hover:not(:disabled) {
+    background: rgba(0,136,170,0.2);
+    border-color: #00ffff;
+}
+
+.shop-items button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.item-desc {
+    display: block;
+    font-size: 0.8rem;
+    color: #666666;
+    margin-top: 0.3rem;
+}
+
+.floor-buttons {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.floor-buttons button {
+    text-align: center;
+    padding: 0.8rem 0.5rem;
+}
+
+/* ============================================
+   FLOOR COMPLETE
+   ============================================ */
+
+#floor-complete {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 70;
+}
+
+.floor-complete-content {
+    text-align: center;
+    padding: 2rem;
+}
+
+.floor-complete-content h2 {
+    color: #00ffff;
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    text-shadow: 0 0 20px #00ffff;
+}
+
+.floor-complete-content p {
+    color: #aaaaaa;
+    margin-bottom: 0.5rem;
+}
+
+.floor-complete-content button {
+    margin: 0.5rem;
+    padding: 1rem 2rem;
+    background: transparent;
+    border: 2px solid #00ffff;
+    color: #00ffff;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.floor-complete-content button:hover {
+    background: rgba(0,255,255,0.2);
+}
+
+/* ============================================
+   DEATH SCREEN
+   ============================================ */
+
+#death-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(20,0,0,0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 80;
+}
+
+.death-content {
+    text-align: center;
+    padding: 2rem;
+}
+
+.death-content h2 {
+    color: #ff4444;
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    text-shadow: 0 0 30px #ff0000;
+}
+
+.death-content p {
+    color: #aa6666;
+    margin-bottom: 1rem;
+}
+
+.death-content button {
+    margin: 0.5rem;
+    padding: 1rem 2rem;
+    background: transparent;
+    border: 2px solid #ff4444;
+    color: #ff4444;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.death-content button:hover {
+    background: rgba(255,68,68,0.2);
+}
+
+/* ============================================
+   VICTORY SCREEN
+   ============================================ */
+
+#victory-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(20,20,10,0.95) 0%, rgba(40,30,10,0.95) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 80;
+}
+
+.victory-content {
+    text-align: center;
+    padding: 2rem;
+}
+
+.victory-content h2 {
+    color: #ffd700;
+    font-size: 2.5rem;
+    margin-bottom: 1.5rem;
+    text-shadow: 0 0 30px #ffaa00;
+}
+
+.victory-content p {
+    color: #ccaa66;
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+    line-height: 1.6;
+}
+
+.victory-content button {
+    margin-top: 1.5rem;
+    padding: 1rem 3rem;
+    background: transparent;
+    border: 2px solid #ffd700;
+    color: #ffd700;
+    cursor: pointer;
+    font-size: 1.1rem;
+}
+
+.victory-content button:hover {
+    background: rgba(255,215,0,0.2);
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+@media (max-height: 400px) {
+    #joystick-zone {
+        width: 120px;
+        height: 120px;
+    }
+    
+    #joystick-base {
+        width: 100px;
+        height: 100px;
+    }
+    
+    #joystick-knob {
+        width: 40px;
+        height: 40px;
+    }
+    
+    .action-btn {
+        width: 65px;
+        height: 65px;
+        font-size: 0.7rem;
+    }
+    
+    .attack-btn {
+        width: 75px;
+        height: 75px;
+    }
+    
+    .ability-btn {
+        width: 55px;
+        height: 40px;
+        font-size: 0.6rem;
+    }
+    
+    #ability-buttons {
+        right: 100px;
+    }
+}
+
+@media (orientation: portrait) {
+    .title-content h1 {
+        font-size: 1.8rem;
+    }
+    
+    #notification {
+        font-size: 1rem;
+    }
+}
+
+/* ============================================
+   SCROLLBAR
+   ============================================ */
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(0,0,0,0.3);
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(0,255,255,0.3);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(0,255,255,0.5);
+}
