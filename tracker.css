@@ -1,0 +1,385 @@
+/* ============================================
+   Echoes — Chiptune Studio (editor styles)
+   Light theme adapted from the provided reference.
+   Optimized for a phone held in landscape.
+   ============================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+:root {
+    --bg: #F5F7FA;
+    --surface: #FFFFFF;
+    --surface-2: #EEF1F6;
+    --text: #1D1D1F;
+    --text-soft: #6E6E73;
+    --border: rgba(0,0,0,0.10);
+    --border-strong: rgba(0,0,0,0.18);
+    --accent: #0A66C2;
+    --accent-hover: #084A8E;
+
+    /* channel colors */
+    --ch-pulse1: #0A66C2;   /* Melody  */
+    --ch-pulse2: #2E9F5C;   /* Harmony */
+    --ch-triangle: #7C3AED; /* Bass    */
+    --ch-noise: #D97706;    /* Drums   */
+
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+    --shadow-md: 0 6px 24px rgba(0,0,0,0.12);
+
+    --header-h: 50px;
+    --sidebar-w: 210px;
+}
+
+html, body { height: 100%; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+}
+
+/* ---------- Header ---------- */
+.app-header {
+    height: var(--header-h);
+    flex: 0 0 var(--header-h);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    gap: 8px;
+    z-index: 20;
+}
+.header-left, .header-center, .header-right { display: flex; align-items: center; gap: 8px; }
+
+.icon-btn {
+    width: 36px; height: 36px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    font-size: 1.1rem;
+    color: var(--text);
+    cursor: pointer;
+}
+.icon-btn:active { background: var(--surface-2); }
+
+.song-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+    background: none;
+    border: none;
+    border-bottom: 1px dashed transparent;
+    cursor: pointer;
+    max-width: 30vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.song-title:active { border-bottom-color: var(--accent); }
+
+.transport-btn {
+    width: 44px; height: 36px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+}
+.transport-btn.playing { background: #C0392B; }
+
+.toggle-chip {
+    font-size: 0.75rem;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-soft);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.toggle-chip.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.tempo {
+    font-size: 0.7rem;
+    color: var(--text-soft);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.tempo input {
+    width: 54px;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.primary-btn, .ghost-btn, .secondary {
+    font-size: 0.8rem;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    white-space: nowrap;
+}
+.primary-btn { background: var(--accent); color: #fff; border-color: var(--accent); }
+.primary-btn:active { background: var(--accent-hover); }
+.ghost-btn:active, .secondary:active { background: var(--surface-2); }
+.ghost-btn.sm { font-size: 0.72rem; padding: 5px 8px; }
+.ghost-btn.danger { color: #C0392B; }
+
+/* ---------- Main area ---------- */
+.main-area {
+    flex: 1 1 auto;
+    display: flex;
+    min-height: 0;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+    width: var(--sidebar-w);
+    flex: 0 0 var(--sidebar-w);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    transition: margin-left 0.2s ease;
+}
+.sidebar.collapsed { margin-left: calc(-1 * var(--sidebar-w)); }
+
+.panel {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+}
+.panel-title {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-soft);
+    font-weight: 700;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+.panel-actions { display: flex; gap: 4px; }
+
+.song-switch { display: flex; gap: 6px; }
+.song-switch select {
+    flex: 1;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    background: var(--surface);
+}
+
+/* Channels */
+.channel-list { display: flex; flex-direction: column; gap: 6px; }
+.channel-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    background: var(--surface);
+}
+.channel-row.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.channel-dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
+.channel-name { font-size: 0.82rem; font-weight: 600; flex: 1; }
+.channel-row.muted .channel-name { color: var(--text-soft); text-decoration: line-through; }
+.mini-btn {
+    font-size: 0.65rem;
+    padding: 3px 6px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--text-soft);
+    cursor: pointer;
+}
+.mini-btn.on { background: var(--surface-2); }
+
+/* Chips (patterns + order) */
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+    font-size: 0.78rem;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    cursor: pointer;
+}
+.chip.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+.chip.order-chip { border-radius: 6px; }
+
+.loop-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--text-soft);
+    margin-top: 8px;
+}
+
+/* ---------- Canvas ---------- */
+.canvas-container {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--bg);
+}
+.canvas-bar {
+    height: 34px;
+    flex: 0 0 34px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    font-size: 0.78rem;
+    color: var(--text-soft);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+}
+.editing-label b { color: var(--text); }
+.octave-ctrl { display: flex; gap: 6px; }
+.octave-ctrl.hidden { display: none; }
+
+.grid-wrap {
+    flex: 1 1 auto;
+    overflow: auto;
+    position: relative;
+}
+
+/* The step grid is a CSS grid: a label column + N step columns. */
+.grid {
+    display: grid;
+    /* --steps and --cols set inline by JS */
+    grid-template-columns: 46px repeat(var(--steps), 40px);
+    width: max-content;
+}
+
+.gcell {
+    height: 22px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    color: var(--text-soft);
+    background: var(--surface);
+}
+
+/* Header row (step numbers) */
+.hcell {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    font-weight: 700;
+    background: var(--surface-2);
+}
+/* Label column (note / drum names) */
+.lcell {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface-2);
+    font-weight: 600;
+    justify-content: flex-end;
+    padding-right: 6px;
+}
+.lcell.black { background: #E3E7EE; color: var(--text-soft); }
+/* Top-left corner */
+.corner {
+    position: sticky;
+    top: 0; left: 0;
+    z-index: 4;
+    background: var(--surface-2);
+}
+
+/* Note cells */
+.cell { cursor: pointer; background: var(--surface); }
+.cell.black { background: #F0F2F6; }
+.cell.beat { border-left: 2px solid var(--border-strong); }
+.cell.active { box-shadow: inset 0 0 0 2px rgba(255,255,255,0.7); }
+.cell.playcol { background: rgba(10,102,194,0.08); }
+.cell.playcol.black { background: rgba(10,102,194,0.12); }
+
+/* Active cell colors per channel (set via grid data-attr on .grid) */
+.grid[data-ch="pulse1"]   .cell.active { background: var(--ch-pulse1); }
+.grid[data-ch="pulse2"]   .cell.active { background: var(--ch-pulse2); }
+.grid[data-ch="triangle"] .cell.active { background: var(--ch-triangle); }
+.grid[data-ch="noise"]    .cell.active { background: var(--ch-noise); }
+
+/* ---------- Modal ---------- */
+.modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.35);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+}
+.modal.open { display: flex; }
+.modal-content {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 18px;
+    width: min(360px, 86vw);
+    box-shadow: var(--shadow-md);
+}
+.modal-title { font-size: 1rem; font-weight: 700; margin-bottom: 14px; }
+.form-group { margin-bottom: 14px; }
+.form-group > label { display: block; font-size: 0.78rem; color: var(--text-soft); margin-bottom: 6px; }
+.seg { display: flex; gap: 6px; }
+.seg button {
+    flex: 1;
+    padding: 8px 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+.seg button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+input[type="range"] { width: 100%; }
+.button-group { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.form-group.hidden { display: none; }
+
+/* ---------- Toast ---------- */
+.toast {
+    position: fixed;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #1D1D1F;
+    color: #fff;
+    font-size: 0.8rem;
+    padding: 8px 16px;
+    border-radius: 8px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 60;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

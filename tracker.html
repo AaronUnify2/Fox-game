@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Echoes — Chiptune Studio</title>
+    <link rel="stylesheet" href="tracker.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="app-header">
+        <div class="header-left">
+            <button class="icon-btn" id="sidebarToggle" title="Toggle panel">☰</button>
+            <button class="song-title" id="songTitle">Untitled</button>
+        </div>
+
+        <div class="header-center">
+            <button class="transport-btn" id="playBtn" title="Play / Stop">▶</button>
+            <button class="toggle-chip" id="loopPatternBtn" title="Loop the current pattern while editing">Loop pattern</button>
+        </div>
+
+        <div class="header-right">
+            <label class="tempo">BPM
+                <input type="number" id="tempoInput" min="40" max="280" step="1" value="120">
+            </label>
+            <button class="ghost-btn" id="importBtn">Import</button>
+            <button class="primary-btn" id="exportBtn">Export</button>
+            <input type="file" id="importFile" accept="application/json,.json" hidden>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <div class="main-area">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <!-- Song switcher -->
+            <div class="panel">
+                <div class="panel-title">Song</div>
+                <div class="song-switch">
+                    <select id="songSelect"></select>
+                    <button class="ghost-btn sm" id="newSongBtn">New</button>
+                </div>
+            </div>
+
+            <!-- Channels -->
+            <div class="panel">
+                <div class="panel-title">Channels</div>
+                <div class="channel-list" id="channelList"></div>
+            </div>
+
+            <!-- Patterns -->
+            <div class="panel">
+                <div class="panel-title">
+                    Patterns
+                    <span class="panel-actions">
+                        <button class="ghost-btn sm" id="addPatternBtn">+ Add</button>
+                        <button class="ghost-btn sm" id="dupPatternBtn">Dup</button>
+                        <button class="ghost-btn sm danger" id="delPatternBtn">Del</button>
+                    </span>
+                </div>
+                <div class="chip-row" id="patternList"></div>
+            </div>
+
+            <!-- Order -->
+            <div class="panel">
+                <div class="panel-title">
+                    Order
+                    <span class="panel-actions">
+                        <button class="ghost-btn sm" id="orderAddBtn">+ Append</button>
+                        <button class="ghost-btn sm" id="orderRemoveBtn">Remove</button>
+                    </span>
+                </div>
+                <div class="chip-row" id="orderList"></div>
+                <label class="loop-row">
+                    <input type="checkbox" id="loopSongChk" checked> Loop song
+                </label>
+            </div>
+        </aside>
+
+        <!-- Canvas -->
+        <div class="canvas-container">
+            <div class="canvas-bar">
+                <span class="editing-label">Editing:
+                    <b id="editingChannel">Melody</b> ·
+                    pattern <b id="editingPattern">A</b>
+                </span>
+                <span class="octave-ctrl" id="octaveCtrl">
+                    <button class="ghost-btn sm" id="octDown">Oct −</button>
+                    <button class="ghost-btn sm" id="octUp">Oct +</button>
+                </span>
+            </div>
+            <div class="grid-wrap" id="gridWrap">
+                <div class="grid" id="grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Channel settings modal -->
+    <div class="modal" id="channelModal">
+        <div class="modal-content">
+            <div class="modal-title" id="channelModalTitle">Channel</div>
+            <div class="form-group" id="dutyGroup">
+                <label>Duty cycle (pulse tone)</label>
+                <div class="seg" id="dutySeg">
+                    <button data-duty="0.125">12.5%</button>
+                    <button data-duty="0.25">25%</button>
+                    <button data-duty="0.5">50%</button>
+                    <button data-duty="0.75">75%</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Volume <span id="volVal">0.80</span></label>
+                <input type="range" id="volRange" min="0" max="1" step="0.05" value="0.8">
+            </div>
+            <div class="button-group">
+                <button class="secondary" id="channelModalClose">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script type="module" src="tracker.js"></script>
+</body>
+</html>

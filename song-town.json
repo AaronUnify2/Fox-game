@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "title": "Town Theme",
+  "tempo": 120,
+  "stepsPerBeat": 4,
+  "patternLength": 16,
+  "loop": true,
+  "loopStart": 0,
+  "channels": [
+    { "id": "pulse1",   "name": "Melody",  "type": "pulse",    "duty": 0.5,  "volume": 0.85, "muted": false },
+    { "id": "pulse2",   "name": "Harmony", "type": "pulse",    "duty": 0.25, "volume": 0.55, "muted": false },
+    { "id": "triangle", "name": "Bass",    "type": "triangle",               "volume": 0.9,  "muted": false },
+    { "id": "noise",    "name": "Drums",   "type": "noise",                  "volume": 0.6,  "muted": false }
+  ],
+  "patterns": [
+    {
+      "id": "p0",
+      "name": "A",
+      "cells": {
+        "pulse1":   [72, null, null, 71,  69, null, 67, null,  69, null, 71, null,  72, null, null, null],
+        "pulse2":   [64, null, null, 62,  60, null, 59, null,  60, null, 62, null,  64, null, null, null],
+        "triangle": [36, null, null, null, 43, null, null, null, 45, null, null, null, 41, null, null, null],
+        "noise":    [0, null, 2, null,  1, null, 2, null,  0, null, 2, null,  1, null, 2, null]
+      }
+    },
+    {
+      "id": "p1",
+      "name": "B",
+      "cells": {
+        "pulse1":   [67, null, 69, null, 71, null, 72, null, 71, null, 69, null, 67, null, null, null],
+        "pulse2":   [60, null, 62, null, 64, null, 65, null, 64, null, 62, null, 60, null, null, null],
+        "triangle": [43, null, null, null, 41, null, null, null, 45, null, null, null, 36, null, null, null],
+        "noise":    [0, null, 2, null,  1, null, 2, null,  0, null, 2, null,  1, null, 2, null]
+      }
+    }
+  ],
+  "order": ["p0", "p0", "p1", "p0"]
+}
