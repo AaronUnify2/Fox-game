@@ -49,15 +49,15 @@ export function disposeTown() {
 
 function createLighting() {
     // Ambient
-    const ambient = new THREE.AmbientLight(0x4466aa, 0.6);
+    const ambient = new THREE.AmbientLight(0x6680b0, 1.0);
     townScene.add(ambient);
     
     // Hemisphere
-    const hemi = new THREE.HemisphereLight(0x6688cc, 0x332244, 0.8);
+    const hemi = new THREE.HemisphereLight(0x88aae0, 0x33304a, 1.1);
     townScene.add(hemi);
     
     // Main directional (moonlight)
-    const moon = new THREE.DirectionalLight(0x8899cc, 0.8);
+    const moon = new THREE.DirectionalLight(0xaab8e0, 1.1);
     moon.position.set(-20, 30, 10);
     moon.castShadow = true;
     moon.shadow.mapSize.width = 2048;
@@ -494,24 +494,30 @@ function createLampPost(x, z) {
     
     // Lamp housing
     const housingGeom = new THREE.BoxGeometry(0.5, 0.6, 0.5);
-    const housing = new THREE.Mesh(housingGeom, postMat);
+    const housingMat = new THREE.MeshStandardMaterial({
+        color: 0x3a3a4a,
+        metalness: 0.7,
+        emissive: 0xffaa44,
+        emissiveIntensity: 0.4
+    });
+    const housing = new THREE.Mesh(housingGeom, housingMat);
     housing.position.y = 4.3;
     group.add(housing);
     
-    // Glow
-    const glowGeom = new THREE.SphereGeometry(0.2, 8, 8);
+    // Glow (hangs just BELOW the housing so it isn't sealed inside it)
+    const glowGeom = new THREE.SphereGeometry(0.22, 12, 12);
     const glowMat = new THREE.MeshBasicMaterial({
-        color: 0xffaa44,
+        color: 0xffcc66,
         transparent: true,
-        opacity: 0.9
+        opacity: 0.95
     });
     const glow = new THREE.Mesh(glowGeom, glowMat);
-    glow.position.y = 4.3;
+    glow.position.y = 3.85;
     group.add(glow);
     
-    // Light
-    const light = new THREE.PointLight(0xffaa44, 0.8, 10);
-    light.position.y = 4.3;
+    // Light (placed below the housing so it actually casts light on the plaza)
+    const light = new THREE.PointLight(0xffaa44, 2.2, 16, 1.5);
+    light.position.y = 3.8;
     light.castShadow = true;
     group.add(light);
     
