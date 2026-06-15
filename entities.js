@@ -166,10 +166,24 @@ function updatePlayer(delta, inputState) {
     // Movement
     const moveDir = new THREE.Vector3(moveX, 0, moveZ);
     if (moveDir.length() > 0.1) {
-        moveDir.normalize();
-        player.rotation.y = Math.atan2(moveDir.x, moveDir.z);
-        player.position.x += moveDir.x * userData.moveSpeed * delta;
-        player.position.z += moveDir.z * userData.moveSpeed * delta;
+        let dirX, dirZ;
+        if (inputState.cameraRelative) {
+            // FPS: stick is relative to where the camera looks.
+            // forward = (sin yaw, cos yaw); right = (cos yaw, -sin yaw)
+            const yaw = inputState.cameraYaw || 0;
+            const s = Math.sin(yaw), c = Math.cos(yaw);
+            dirX = (-moveZ) * s + (moveX) * c;
+            dirZ = (-moveZ) * c - (moveX) * s;
+            const len = Math.hypot(dirX, dirZ) || 1;
+            dirX /= len; dirZ /= len;
+            player.rotation.y = yaw; // face (and aim) where the camera looks
+        } else {
+            moveDir.normalize();
+            dirX = moveDir.x; dirZ = moveDir.z;
+            player.rotation.y = Math.atan2(moveDir.x, moveDir.z);
+        }
+        player.position.x += dirX * userData.moveSpeed * delta;
+        player.position.z += dirZ * userData.moveSpeed * delta;
     }
     
     // Jump
