@@ -128,8 +128,12 @@ function animate() {
     if (gameState === 'dungeon' || gameState === 'town') {
         const inputState = getInputState();
         
+        // Player movement/physics runs in BOTH town and dungeon.
+        // (Previously this was dungeon-only, so the joystick moved nothing in
+        // town and the camera auto-follow rotated instead of the player walking.)
+        updateEntities(delta, gameData, inputState);
+        
         if (gameState === 'dungeon') {
-            updateEntities(delta, gameData, inputState);
             checkRoomTransitions();
             checkPlayerDeath();
         }
