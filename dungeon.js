@@ -404,11 +404,11 @@ function createWestRoom(theme, floor) {
         emissive: theme.accentColor,
         emissiveIntensity: 0.03
     });
-    const floor = new THREE.Mesh(floorGeom, floorMat);
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.set(room.x, 0, room.z);
-    floor.receiveShadow = true;
-    dungeonScene.add(floor);
+    const floorMesh = new THREE.Mesh(floorGeom, floorMat);
+    floorMesh.rotation.x = -Math.PI / 2;
+    floorMesh.position.set(room.x, 0, room.z);
+    floorMesh.receiveShadow = true;
+    dungeonScene.add(floorMesh);
     
     // Walls
     createCurvedWalls(room.x, room.z, room.radius, 8, theme, [2]); // Gap for hallway
