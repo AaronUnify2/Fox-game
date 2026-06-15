@@ -168,6 +168,23 @@ canvas {
     text-shadow: 0 0 10px #ffcc00;
 }
 
+#btn-camera-toggle {
+    background: rgba(0,0,0,0.55);
+    border: 2px solid #00ffff;
+    color: #00ffff;
+    font-size: 0.7rem;
+    font-weight: bold;
+    letter-spacing: 0.08em;
+    padding: 0.35rem 0.7rem;
+    border-radius: 6px;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+#btn-camera-toggle:active {
+    background: rgba(0,255,255,0.25);
+}
+
 /* ============================================
    NOTIFICATION
    ============================================ */
