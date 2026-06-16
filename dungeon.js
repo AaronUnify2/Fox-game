@@ -67,26 +67,32 @@ export function loadFloor(floor) {
     dungeonScene.fog = new THREE.FogExp2(theme.fogColor, theme.fogDensity);
     
     // Create lighting
-    createLighting(theme);
-    
+    const safe = (label, fn) => {
+        try { fn(); }
+        catch (e) { console.warn('[dungeon] ' + label + ' failed:', e); }
+    };
+    safe('lighting', () => createLighting(theme));
+
     // Create rooms
-    createCenterRoom(theme);
-    createNorthRoom(theme, floor);  // Pillar boss
-    createSouthRoom(theme);         // Combat
-    createEastRoom(theme, floor);   // Archive
-    createWestRoom(theme, floor);   // Mini-boss
-    
+    safe('center', () => createCenterRoom(theme));
+    safe('north', () => createNorthRoom(theme, floor));   // Pillar boss
+    safe('south', () => createSouthRoom(theme));           // Combat
+    safe('east', () => createEastRoom(theme, floor));      // Archive
+    safe('west', () => createWestRoom(theme, floor));      // Mini-boss
+
     // Create hallways
     // Hallways: connect each room edge to the center room edge (with a small
     // overlap into both so the floors join). Centre edge is at ±12; the outer
     // room edges are at z=-25 (N), z=30 (S), x=32 (E), x=-28 (W).
-    createHallway(0, -10, 0, -27, theme);   // Center <-> North
-    createHallway(0, 10, 0, 32, theme);     // Center <-> South
-    createHallway(10, 0, 34, 0, theme);     // Center <-> East
-    createHallway(-10, 0, -30, 0, theme);   // Center <-> West
-    
+    safe('hallways', () => {
+        createHallway(0, -10, 0, -27, theme);   // Center <-> North
+        createHallway(0, 10, 0, 32, theme);     // Center <-> South
+        createHallway(10, 0, 34, 0, theme);     // Center <-> East
+        createHallway(-10, 0, -30, 0, theme);   // Center <-> West
+    });
+
     // Add decorations
-    createDecorations(theme, floor);
+    safe('decorations', () => createDecorations(theme, floor));
 }
 
 // ============================================
@@ -509,51 +515,64 @@ function createHallway(x1, z1, x2, z2, theme) {
 
 // ---- Stone-brick texture + tall-wall helpers ----
 const WALL_H = 40; // tall walls rise into the dark for an "endless height" feel
-let _brickTex = null;
+let _brickTex; // undefined = not built yet, null = build failed, else the texture
 const _wallMatCache = {};
 
 function getBrickTexture() {
-    if (_brickTex) return _brickTex;
-    const c = document.createElement('canvas');
-    c.width = 256; c.height = 256;
-    const g = c.getContext('2d');
-    g.fillStyle = '#26262b'; g.fillRect(0, 0, 256, 256); // mortar
-    const rows = 4, cols = 2;
-    const bw = 256 / cols, bh = 256 / rows;
-    for (let row = 0; row < rows; row++) {
-        const offset = (row % 2) * (bw / 2);
-        for (let col = -1; col <= cols; col++) {
-            const x = col * bw + offset + 5;
-            const y = row * bh + 5;
-            const w = bw - 10, h = bh - 10;
-            const base = 150 + Math.floor(Math.random() * 40 - 20);
-            g.fillStyle = `rgb(${base},${base},${base + 6})`;
-            g.fillRect(x, y, w, h);
-            for (let n = 0; n < 60; n++) { // speckle = rough stone
-                const sh = base + Math.floor(Math.random() * 40 - 20);
-                g.fillStyle = `rgba(${sh},${sh},${sh},0.4)`;
-                g.fillRect(x + Math.random() * w, y + Math.random() * h, 2, 2);
+    if (_brickTex !== undefined) return _brickTex;
+    try {
+        const c = document.createElement('canvas');
+        c.width = 256; c.height = 256;
+        const g = c.getContext('2d');
+        if (!g) { _brickTex = null; return null; }
+        g.fillStyle = '#26262b'; g.fillRect(0, 0, 256, 256); // mortar
+        const rows = 4, cols = 2;
+        const bw = 256 / cols, bh = 256 / rows;
+        for (let row = 0; row < rows; row++) {
+            const offset = (row % 2) * (bw / 2);
+            for (let col = -1; col <= cols; col++) {
+                const x = col * bw + offset + 5;
+                const y = row * bh + 5;
+                const w = bw - 10, h = bh - 10;
+                const base = 150 + Math.floor(Math.random() * 40 - 20);
+                g.fillStyle = `rgb(${base},${base},${base + 6})`;
+                g.fillRect(x, y, w, h);
+                for (let n = 0; n < 60; n++) { // speckle = rough stone
+                    const sh = base + Math.floor(Math.random() * 40 - 20);
+                    g.fillStyle = `rgba(${sh},${sh},${sh},0.4)`;
+                    g.fillRect(x + Math.random() * w, y + Math.random() * h, 2, 2);
+                }
             }
         }
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+        _brickTex = tex;
+    } catch (e) {
+        _brickTex = null; // fall back to solid-colour walls
     }
-    _brickTex = new THREE.CanvasTexture(c);
-    _brickTex.wrapS = _brickTex.wrapT = THREE.RepeatWrapping;
     return _brickTex;
 }
 
-// Cached brick material per (theme, size) so brick scale stays roughly uniform.
+// Cached brick material per (theme, size). Falls back to a plain colour if the
+// canvas texture can't be created, so a texture failure never blanks the level.
 function getWallMaterial(theme, width, height) {
     const rw = Math.max(1, Math.round(width));
     const rh = Math.max(1, Math.round(height));
     const key = theme.name + '_' + rw + '_' + rh;
     if (_wallMatCache[key]) return _wallMatCache[key];
-    const tex = getBrickTexture().clone();
-    tex.needsUpdate = true;
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(Math.max(1, rw / 6), Math.max(1, rh / 6)); // ~6-unit brick tiles
-    const mat = new THREE.MeshStandardMaterial({
-        color: theme.wallColor, map: tex, roughness: 0.95, metalness: 0.05
-    });
+
+    const base = getBrickTexture();
+    let mat;
+    if (base) {
+        const tex = base.clone();
+        tex.needsUpdate = true;
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(Math.max(1, rw / 6), Math.max(1, rh / 6)); // ~6-unit brick tiles
+        mat = new THREE.MeshStandardMaterial({ color: theme.wallColor, map: tex, roughness: 0.95, metalness: 0.05 });
+    } else {
+        mat = new THREE.MeshStandardMaterial({ color: theme.wallColor, roughness: 0.9, metalness: 0.1 });
+    }
     _wallMatCache[key] = mat;
     return mat;
 }
