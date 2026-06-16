@@ -260,31 +260,84 @@ function checkPlatformCollision() {
 function checkWallCollision() {
     const scene = getDungeonScene();
     if (!scene) return;
-    
+
     player.userData.canWallJump = false;
     const r = player.userData.radius;
-    
+    const px = player.position.x, pz = player.position.z;
+
     scene.traverse(obj => {
-        if (!obj.isMesh || obj.userData?.isPlatform || !obj.geometry) return;
-        
-        const bbox = new THREE.Box3().setFromObject(obj);
-        const size = new THREE.Vector3();
-        bbox.getSize(size);
-        if (size.y < 2) return;
-        
-        const closestX = Math.max(bbox.min.x, Math.min(player.position.x, bbox.max.x));
-        const closestZ = Math.max(bbox.min.z, Math.min(player.position.z, bbox.max.z));
-        const distX = player.position.x - closestX;
-        const distZ = player.position.z - closestZ;
-        const dist = Math.sqrt(distX * distX + distZ * distZ);
-        
-        if (dist < r && dist > 0) {
-            player.position.x += (distX / dist) * (r - dist);
-            player.position.z += (distZ / dist) * (r - dist);
-            
+        if (!obj.isMesh || !obj.userData?.isWall || !obj.geometry?.parameters) return;
+        const g = obj.geometry.parameters;
+
+        // Cylindrical pillars: circle-vs-circle in XZ.
+        if (g.radiusTop !== undefined || g.radiusBottom !== undefined) {
+            const pr = Math.max(g.radiusTop || 0, g.radiusBottom || 0);
+            let dx = px - obj.position.x, dz = pz - obj.position.z;
+            let dist = Math.hypot(dx, dz);
+            const minDist = pr + r;
+            if (dist < minDist) {
+                if (dist < 1e-4) { dx = 1; dz = 0; dist = 1e-4; }
+                const push = minDist - dist;
+                player.position.x += (dx / dist) * push;
+                player.position.z += (dz / dist) * push;
+                if (!player.userData.onGround) {
+                    player.userData.canWallJump = true;
+                    player.userData.lastWallNormal = new THREE.Vector3(dx / dist, 0, dz / dist);
+                }
+            }
+            return;
+        }
+
+        // Box walls: oriented-box vs circle (handles rotated walls AND the
+        // case where the player center is already inside the wall -> eject).
+        const hw = (g.width || 0) / 2;
+        const hd = (g.depth || 0) / 2;
+        if (hw === 0 || hd === 0) return;
+
+        const theta = obj.rotation.y;
+        const cos = Math.cos(theta), sin = Math.sin(theta);
+        const dx = px - obj.position.x, dz = pz - obj.position.z;
+        // world -> wall-local
+        const lx = dx * cos - dz * sin;
+        const lz = dx * sin + dz * cos;
+
+        const cxp = Math.max(-hw, Math.min(lx, hw));
+        const czp = Math.max(-hd, Math.min(lz, hd));
+        const ox = lx - cxp, oz = lz - czp;
+        const d2 = ox * ox + oz * oz;
+
+        let pushLX = 0, pushLZ = 0, nlx = 0, nlz = 0, hit = false;
+        if (d2 > 1e-8) {
+            const dist = Math.sqrt(d2);
+            if (dist < r) {
+                const pen = r - dist;
+                pushLX = (ox / dist) * pen; pushLZ = (oz / dist) * pen;
+                nlx = ox / dist; nlz = oz / dist;
+                hit = true;
+            }
+        } else {
+            // inside the box -> push out through the nearest face
+            const penX = hw - Math.abs(lx);
+            const penZ = hd - Math.abs(lz);
+            if (penX < penZ) {
+                const sgn = lx >= 0 ? 1 : -1;
+                pushLX = sgn * (penX + r); nlx = sgn;
+            } else {
+                const sgn = lz >= 0 ? 1 : -1;
+                pushLZ = sgn * (penZ + r); nlz = sgn;
+            }
+            hit = true;
+        }
+
+        if (hit) {
+            // wall-local -> world
+            player.position.x += pushLX * cos + pushLZ * sin;
+            player.position.z += -pushLX * sin + pushLZ * cos;
             if (!player.userData.onGround) {
                 player.userData.canWallJump = true;
-                player.userData.lastWallNormal = new THREE.Vector3(distX / dist, 0, distZ / dist);
+                player.userData.lastWallNormal = new THREE.Vector3(
+                    nlx * cos + nlz * sin, 0, -nlx * sin + nlz * cos
+                );
             }
         }
     });
