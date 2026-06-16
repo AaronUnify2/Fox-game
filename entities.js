@@ -355,7 +355,7 @@ function createProjectile(position, angle, type) {
     const proj = new THREE.Mesh(geom, mat);
     
     proj.position.copy(position);
-    proj.position.y += 0.8;
+    proj.position.y += 1.2;
     
     const glowGeom = new THREE.SphereGeometry(cfg.size * 1.5, 8, 8);
     const glowMat = new THREE.MeshBasicMaterial({ color: cfg.color, transparent: true, opacity: 0.3 });
@@ -408,11 +408,15 @@ function updateProjectiles(delta) {
             continue;
         }
         
-        // Hit enemies
+        // Hit enemies — generous cylinder: wide in XZ, tall in Y so that
+        // floating drones (y~2) and low floor enemies are both easy to hit.
         let hit = false;
         for (let j = enemies.length - 1; j >= 0; j--) {
-            if (proj.position.distanceTo(enemies[j].position) < enemies[j].userData.radius + 0.2) {
-                damageEnemy(enemies[j], proj.userData.damage);
+            const e = enemies[j];
+            const dxz = Math.hypot(proj.position.x - e.position.x, proj.position.z - e.position.z);
+            const dy = Math.abs(proj.position.y - e.position.y);
+            if (dxz < e.userData.radius + 1.0 && dy < 2.2) {
+                damageEnemy(e, proj.userData.damage);
                 hit = true;
                 if (!proj.userData.piercing) break;
             }
