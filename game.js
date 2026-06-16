@@ -21,8 +21,8 @@ let clock = new THREE.Clock();
 // Game data (persisted)
 const defaultGameData = {
     player: {
-        health: 100,
-        maxHealth: 100,
+        health: 1000,   // TESTING: temporary high health
+        maxHealth: 1000, // TESTING: temporary high health
         xp: 0
     },
     upgrades: {
@@ -470,7 +470,7 @@ export function purchaseUpgrade(upgradeName) {
     
     // Apply max health immediately
     if (upgradeName === 'maxHealth') {
-        gameData.player.maxHealth = 100 + gameData.upgrades.maxHealth * 20;
+        gameData.player.maxHealth = 1000 + gameData.upgrades.maxHealth * 20; // TESTING base 1000
         gameData.player.health = gameData.player.maxHealth;
     }
     
@@ -521,7 +521,7 @@ export function loadGame() {
             gameData.flags = { ...defaultGameData.flags, ...loaded.flags };
             
             // Recalculate max health
-            gameData.player.maxHealth = 100 + gameData.upgrades.maxHealth * 20;
+            gameData.player.maxHealth = 1000 + gameData.upgrades.maxHealth * 20; // TESTING base 1000
         } catch (e) {
             console.error('Failed to load save:', e);
         }
