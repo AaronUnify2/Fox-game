@@ -557,6 +557,21 @@ function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
         wall.receiveShadow = true;
         dungeonScene.add(wall);
     }
+
+    // Door frames: a post on each side of every opening, sitting where the
+    // curved room wall stops, to bridge the gap to the straight hallway walls.
+    for (const o of openings) {
+        const dx = Math.cos(o), dz = Math.sin(o);   // door axis (outward)
+        const px = -Math.sin(o), pz = Math.cos(o);  // perpendicular (across doorway)
+        for (const side of [-1, 1]) {
+            const off = 3.4 * side;                 // just outside the 6-wide corridor
+            const post = new THREE.Mesh(new THREE.BoxGeometry(1.4, 6, 1.4), wallMat);
+            post.position.set(cx + dx * radius + px * off, 3, cz + dz * radius + pz * off);
+            post.castShadow = true;
+            post.receiveShadow = true;
+            dungeonScene.add(post);
+        }
+    }
 }
 
 function createRectWalls(cx, cz, halfSize, theme, gapSide = null) {
