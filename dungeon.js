@@ -77,10 +77,13 @@ export function loadFloor(floor) {
     createWestRoom(theme, floor);   // Mini-boss
     
     // Create hallways
-    createHallway(0, -20, 0, -30, theme);   // Center to North
-    createHallway(0, 20, 0, 30, theme);     // Center to South
-    createHallway(20, 0, 30, 0, theme);     // Center to East
-    createHallway(-20, 0, -30, 0, theme);   // Center to West
+    // Hallways: connect each room edge to the center room edge (with a small
+    // overlap into both so the floors join). Centre edge is at ±12; the outer
+    // room edges are at z=-25 (N), z=30 (S), x=32 (E), x=-28 (W).
+    createHallway(0, -10, 0, -27, theme);   // Center <-> North
+    createHallway(0, 10, 0, 32, theme);     // Center <-> South
+    createHallway(10, 0, 34, 0, theme);     // Center <-> East
+    createHallway(-10, 0, -30, 0, theme);   // Center <-> West
     
     // Add decorations
     createDecorations(theme, floor);
@@ -198,7 +201,7 @@ function createCenterRoom(theme) {
     dungeonScene.add(floor);
     
     // Walls (curved segments)
-    createCurvedWalls(room.x, room.z, room.radius, 8, theme, [0, 2, 4, 6]); // Gaps for hallways
+    createRingWalls(room.x, room.z, room.radius, theme, [0, Math.PI/2, Math.PI, -Math.PI/2]); // doors: E,S,W,N
     
     // Central pillar decoration
     const pillarGeom = new THREE.CylinderGeometry(1, 1.2, 6, 8);
@@ -246,7 +249,7 @@ function createNorthRoom(theme, floor) {
     dungeonScene.add(floorMesh);
     
     // Walls
-    createCurvedWalls(room.x, room.z, room.radius, 8, theme, [4]); // Gap for hallway
+    createRingWalls(room.x, room.z, room.radius, theme, [Math.PI/2]); // door faces center (south)
     
     // Spiral platforms around where pillar boss will be
     for (let i = 0; i < 8; i++) {
@@ -306,7 +309,7 @@ function createSouthRoom(theme) {
     dungeonScene.add(floor);
     
     // Walls
-    createCurvedWalls(room.x, room.z, room.radius, 6, theme, [0]); // Gap for hallway
+    createRingWalls(room.x, room.z, room.radius, theme, [-Math.PI/2]); // door faces center (north)
     
     // Combat platforms
     createPlatforms(room.x, room.z, room.radius * 0.6, 3, theme);
@@ -411,7 +414,7 @@ function createWestRoom(theme, floor) {
     dungeonScene.add(floorMesh);
     
     // Walls
-    createCurvedWalls(room.x, room.z, room.radius, 8, theme, [2]); // Gap for hallway
+    createRingWalls(room.x, room.z, room.radius, theme, [0]); // door faces center (east)
     
     // Arena ring
     const ringGeom = new THREE.TorusGeometry(room.radius - 2, 0.2, 8, 32);
@@ -523,32 +526,33 @@ function createHallway(x1, z1, x2, z2, theme) {
 // WALL HELPERS
 // ============================================
 
-function createCurvedWalls(cx, cz, radius, segments, theme, gaps = []) {
+function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
     const wallMat = new THREE.MeshStandardMaterial({
         color: theme.wallColor,
         roughness: 0.8,
         metalness: 0.2
     });
-    
+
+    // Segment count scales with circumference so segments are ~4 units long.
+    const segments = Math.max(12, Math.min(32, Math.round((2 * Math.PI * radius) / 4)));
+    const segArc = (2 * Math.PI) / segments;
+    const segLen = (2 * Math.PI * radius / segments) * 1.04; // slight overlap = no corner gaps
+    const openHalf = (gapWidth / 2) / radius;                // half-width of a doorway, in radians
+
     for (let i = 0; i < segments; i++) {
-        if (gaps.includes(i)) continue;
-        
-        const angle1 = (i / segments) * Math.PI * 2;
-        const angle2 = ((i + 1) / segments) * Math.PI * 2;
-        const midAngle = (angle1 + angle2) / 2;
-        
-        const segLength = 2 * radius * Math.sin(Math.PI / segments);
-        
-        const wall = new THREE.Mesh(
-            new THREE.BoxGeometry(segLength, 6, 0.5),
-            wallMat
-        );
-        wall.position.set(
-            cx + Math.cos(midAngle) * radius,
-            3,
-            cz + Math.sin(midAngle) * radius
-        );
-        wall.rotation.y = -midAngle + Math.PI / 2;
+        const mid = (i + 0.5) * segArc;
+
+        // Skip this segment if it falls within a doorway opening.
+        let skip = false;
+        for (const o of openings) {
+            const d = Math.atan2(Math.sin(mid - o), Math.cos(mid - o)); // shortest signed diff
+            if (Math.abs(d) < openHalf) { skip = true; break; }
+        }
+        if (skip) continue;
+
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(segLen, 6, 0.6), wallMat);
+        wall.position.set(cx + Math.cos(mid) * radius, 3, cz + Math.sin(mid) * radius);
+        wall.rotation.y = -mid + Math.PI / 2; // lay the segment tangent to the ring
         wall.castShadow = true;
         wall.receiveShadow = true;
         dungeonScene.add(wall);
