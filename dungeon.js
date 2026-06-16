@@ -465,7 +465,7 @@ function createHallway(x1, z1, x2, z2, theme) {
     });
     const floor = new THREE.Mesh(floorGeom, floorMat);
     floor.position.set(centerX, 0, centerZ);
-    floor.rotation.y = -angle + Math.PI / 2;
+    floor.rotation.y = -angle;
     floor.receiveShadow = true;
     dungeonScene.add(floor);
     
@@ -480,7 +480,7 @@ function createHallway(x1, z1, x2, z2, theme) {
     [-1, 1].forEach(side => {
         const wall = new THREE.Mesh(wallGeom, wallMat);
         wall.position.set(centerX, 2.5, centerZ);
-        wall.rotation.y = -angle + Math.PI / 2;
+        wall.rotation.y = -angle;
         wall.position.x += Math.cos(angle + Math.PI / 2) * 3 * side;
         wall.position.z += Math.sin(angle + Math.PI / 2) * 3 * side;
         wall.castShadow = true;
@@ -494,7 +494,7 @@ function createHallway(x1, z1, x2, z2, theme) {
         wallMat
     );
     ceiling.position.set(centerX, 5, centerZ);
-    ceiling.rotation.y = -angle + Math.PI / 2;
+    ceiling.rotation.y = -angle;
     dungeonScene.add(ceiling);
     
     // Lights along hallway
