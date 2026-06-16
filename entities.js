@@ -172,8 +172,8 @@ function updatePlayer(delta, inputState) {
             // forward = (sin yaw, cos yaw); right = (cos yaw, -sin yaw)
             const yaw = inputState.cameraYaw || 0;
             const s = Math.sin(yaw), c = Math.cos(yaw);
-            dirX = (-moveZ) * s + (moveX) * c;
-            dirZ = (-moveZ) * c - (moveX) * s;
+            dirX = (-moveZ) * s - (moveX) * c;
+            dirZ = (-moveZ) * c + (moveX) * s;
             const len = Math.hypot(dirX, dirZ) || 1;
             dirX /= len; dirZ /= len;
             player.rotation.y = yaw; // face (and aim) where the camera looks
