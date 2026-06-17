@@ -882,4 +882,4 @@ function createAmbientParticles(theme) {
     const particles = new THREE.Points(geometry, material);
     particles.name = 'ambientParticles';
     dungeonScene.add(particles);
-}
+                                               }
