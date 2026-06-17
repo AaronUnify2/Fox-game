@@ -67,26 +67,32 @@ export function loadFloor(floor) {
     dungeonScene.fog = new THREE.FogExp2(theme.fogColor, theme.fogDensity);
     
     // Create lighting
-    createLighting(theme);
-    
+    const safe = (label, fn) => {
+        try { fn(); }
+        catch (e) { console.warn('[dungeon] ' + label + ' failed:', e); }
+    };
+    safe('lighting', () => createLighting(theme));
+
     // Create rooms
-    createCenterRoom(theme);
-    createNorthRoom(theme, floor);  // Pillar boss
-    createSouthRoom(theme);         // Combat
-    createEastRoom(theme, floor);   // Archive
-    createWestRoom(theme, floor);   // Mini-boss
-    
+    safe('center', () => createCenterRoom(theme));
+    safe('north', () => createNorthRoom(theme, floor));   // Pillar boss
+    safe('south', () => createSouthRoom(theme));           // Combat
+    safe('east', () => createEastRoom(theme, floor));      // Archive
+    safe('west', () => createWestRoom(theme, floor));      // Mini-boss
+
     // Create hallways
     // Hallways: connect each room edge to the center room edge (with a small
     // overlap into both so the floors join). Centre edge is at ±12; the outer
     // room edges are at z=-25 (N), z=30 (S), x=32 (E), x=-28 (W).
-    createHallway(0, -10, 0, -27, theme);   // Center <-> North
-    createHallway(0, 10, 0, 32, theme);     // Center <-> South
-    createHallway(10, 0, 34, 0, theme);     // Center <-> East
-    createHallway(-10, 0, -30, 0, theme);   // Center <-> West
-    
+    safe('hallways', () => {
+        createHallway(0, -10, 0, -27, theme);   // Center <-> North
+        createHallway(0, 10, 0, 32, theme);     // Center <-> South
+        createHallway(10, 0, 34, 0, theme);     // Center <-> East
+        createHallway(-10, 0, -30, 0, theme);   // Center <-> West
+    });
+
     // Add decorations
-    createDecorations(theme, floor);
+    safe('decorations', () => createDecorations(theme, floor));
 }
 
 // ============================================
@@ -213,6 +219,7 @@ function createCenterRoom(theme) {
     const pillar = new THREE.Mesh(pillarGeom, pillarMat);
     pillar.position.set(room.x, 3, room.z);
     pillar.castShadow = true;
+    pillar.userData.isWall = true;
     dungeonScene.add(pillar);
     
     // Glowing top
@@ -325,6 +332,7 @@ function createSouthRoom(theme) {
         );
         pillar.position.set(room.x + px, 2, room.z + pz);
         pillar.castShadow = true;
+        pillar.userData.isWall = true;
         dungeonScene.add(pillar);
     });
 }
@@ -456,66 +464,45 @@ function createHallway(x1, z1, x2, z2, theme) {
     const angle = Math.atan2(z2 - z1, x2 - x1);
     const centerX = (x1 + x2) / 2;
     const centerZ = (z1 + z2) / 2;
-    
+
     // Floor
-    const floorGeom = new THREE.BoxGeometry(length, 0.2, 6);
-    const floorMat = new THREE.MeshStandardMaterial({
-        color: theme.floorColor,
-        roughness: 0.85
-    });
-    const floor = new THREE.Mesh(floorGeom, floorMat);
+    const floor = new THREE.Mesh(
+        new THREE.BoxGeometry(length, 0.2, 6),
+        new THREE.MeshStandardMaterial({ color: theme.floorColor, roughness: 0.85 })
+    );
     floor.position.set(centerX, 0, centerZ);
     floor.rotation.y = -angle;
     floor.receiveShadow = true;
     dungeonScene.add(floor);
-    
-    // Walls
-    const wallGeom = new THREE.BoxGeometry(length, 5, 0.5);
-    const wallMat = new THREE.MeshStandardMaterial({
-        color: theme.wallColor,
-        roughness: 0.8,
-        metalness: 0.2
-    });
-    
+
+    // Tall brick side walls (open to the dark above, matching the rooms)
+    const wallMat = getWallMaterial(theme, length, WALL_H);
     [-1, 1].forEach(side => {
-        const wall = new THREE.Mesh(wallGeom, wallMat);
-        wall.position.set(centerX, 2.5, centerZ);
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(length, WALL_H, 0.6), wallMat);
+        wall.position.set(centerX, WALL_H / 2, centerZ);
         wall.rotation.y = -angle;
         wall.position.x += Math.cos(angle + Math.PI / 2) * 3 * side;
         wall.position.z += Math.sin(angle + Math.PI / 2) * 3 * side;
         wall.castShadow = true;
         wall.receiveShadow = true;
+        wall.userData.isWall = true;
         dungeonScene.add(wall);
     });
-    
-    // Ceiling
-    const ceiling = new THREE.Mesh(
-        new THREE.BoxGeometry(length, 0.3, 6),
-        wallMat
-    );
-    ceiling.position.set(centerX, 5, centerZ);
-    ceiling.rotation.y = -angle;
-    dungeonScene.add(ceiling);
-    
-    // Lights along hallway
-    const numLights = Math.floor(length / 5);
+
+    // Floating lights along the corridor (no ceiling to mount to anymore)
+    const numLights = Math.max(1, Math.floor(length / 5));
     for (let i = 0; i < numLights; i++) {
         const t = (i + 0.5) / numLights;
         const lx = x1 + (x2 - x1) * t;
         const lz = z1 + (z2 - z1) * t;
-        
-        const light = new THREE.PointLight(theme.accentColor, 1.5, 8);
-        light.position.set(lx, 4, lz);
+
+        const light = new THREE.PointLight(theme.accentColor, 1.6, 10);
+        light.position.set(lx, 4.5, lz);
         dungeonScene.add(light);
-        
-        // Light fixture
+
         const fixture = new THREE.Mesh(
             new THREE.SphereGeometry(0.2, 8, 8),
-            new THREE.MeshBasicMaterial({
-                color: theme.accentColor,
-                transparent: true,
-                opacity: 0.8
-            })
+            new THREE.MeshBasicMaterial({ color: theme.accentColor, transparent: true, opacity: 0.85 })
         );
         fixture.position.set(lx, 4.5, lz);
         dungeonScene.add(fixture);
@@ -526,80 +513,133 @@ function createHallway(x1, z1, x2, z2, theme) {
 // WALL HELPERS
 // ============================================
 
-function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
-    const wallMat = new THREE.MeshStandardMaterial({
-        color: theme.wallColor,
-        roughness: 0.8,
-        metalness: 0.2
-    });
+// ---- Stone-brick texture + tall-wall helpers ----
+const WALL_H = 40; // tall walls rise into the dark for an "endless height" feel
+let _brickTex; // undefined = not built yet, null = build failed, else the texture
+const _wallMatCache = {};
 
-    // Segment count scales with circumference so segments are ~4 units long.
-    const segments = Math.max(12, Math.min(32, Math.round((2 * Math.PI * radius) / 4)));
+function getBrickTexture() {
+    if (_brickTex !== undefined) return _brickTex;
+    try {
+        const c = document.createElement('canvas');
+        c.width = 256; c.height = 256;
+        const g = c.getContext('2d');
+        if (!g) { _brickTex = null; return null; }
+        g.fillStyle = '#26262b'; g.fillRect(0, 0, 256, 256); // mortar
+        const rows = 4, cols = 2;
+        const bw = 256 / cols, bh = 256 / rows;
+        for (let row = 0; row < rows; row++) {
+            const offset = (row % 2) * (bw / 2);
+            for (let col = -1; col <= cols; col++) {
+                const x = col * bw + offset + 5;
+                const y = row * bh + 5;
+                const w = bw - 10, h = bh - 10;
+                const base = 150 + Math.floor(Math.random() * 40 - 20);
+                g.fillStyle = `rgb(${base},${base},${base + 6})`;
+                g.fillRect(x, y, w, h);
+                for (let n = 0; n < 60; n++) { // speckle = rough stone
+                    const sh = base + Math.floor(Math.random() * 40 - 20);
+                    g.fillStyle = `rgba(${sh},${sh},${sh},0.4)`;
+                    g.fillRect(x + Math.random() * w, y + Math.random() * h, 2, 2);
+                }
+            }
+        }
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+        _brickTex = tex;
+    } catch (e) {
+        _brickTex = null; // fall back to solid-colour walls
+    }
+    return _brickTex;
+}
+
+// Cached brick material per (theme, size). The ENTIRE build is guarded, so if
+// anything in the texture path fails (canvas, clone, repeat, material) we fall
+// back to a plain coloured wall instead of throwing and blanking the room.
+function getWallMaterial(theme, width, height) {
+    const rw = Math.max(1, Math.round(width));
+    const rh = Math.max(1, Math.round(height));
+    const key = theme.name + '_' + rw + '_' + rh;
+    if (_wallMatCache[key]) return _wallMatCache[key];
+
+    let mat;
+    try {
+        const base = getBrickTexture();
+        if (!base) throw new Error('no brick texture');
+        const tex = base.clone();
+        tex.needsUpdate = true;
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(Math.max(1, rw / 6), Math.max(1, rh / 6)); // ~6-unit brick tiles
+        mat = new THREE.MeshStandardMaterial({ color: theme.wallColor, map: tex, roughness: 0.95, metalness: 0.05 });
+    } catch (e) {
+        mat = new THREE.MeshStandardMaterial({ color: theme.wallColor, roughness: 0.9, metalness: 0.1 });
+    }
+    _wallMatCache[key] = mat;
+    return mat;
+}
+
+function createRingWalls(cx, cz, radius, theme, openings = []) {
+    const segments = Math.max(12, Math.min(40, Math.round((2 * Math.PI * radius) / 4)));
     const segArc = (2 * Math.PI) / segments;
     const segLen = (2 * Math.PI * radius / segments) * 1.04; // slight overlap = no corner gaps
-    const openHalf = (gapWidth / 2) / radius;                // half-width of a doorway, in radians
+    const skipThresh = segArc * 0.9; // removes ~2 segments at each doorway (clean, no partial pokes)
 
+    const wallMat = getWallMaterial(theme, segLen, WALL_H);
     for (let i = 0; i < segments; i++) {
         const mid = (i + 0.5) * segArc;
-
-        // Skip this segment if it falls within a doorway opening.
         let skip = false;
         for (const o of openings) {
-            const d = Math.atan2(Math.sin(mid - o), Math.cos(mid - o)); // shortest signed diff
-            if (Math.abs(d) < openHalf) { skip = true; break; }
+            const d = Math.atan2(Math.sin(mid - o), Math.cos(mid - o));
+            if (Math.abs(d) < skipThresh) { skip = true; break; }
         }
         if (skip) continue;
 
-        const wall = new THREE.Mesh(new THREE.BoxGeometry(segLen, 6, 0.6), wallMat);
-        wall.position.set(cx + Math.cos(mid) * radius, 3, cz + Math.sin(mid) * radius);
-        wall.rotation.y = -mid + Math.PI / 2; // lay the segment tangent to the ring
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(segLen, WALL_H, 0.7), wallMat);
+        wall.position.set(cx + Math.cos(mid) * radius, WALL_H / 2, cz + Math.sin(mid) * radius);
+        wall.rotation.y = -mid + Math.PI / 2; // tangent to the ring
         wall.castShadow = true;
         wall.receiveShadow = true;
+        wall.userData.isWall = true;
         dungeonScene.add(wall);
     }
 
-    // Door frames: a post on each side of every opening, sitting where the
-    // curved room wall stops, to bridge the gap to the straight hallway walls.
+    // Chunky door posts that bridge the curved wall ends to the straight
+    // hallway walls, framing each opening. Placed just outside the corridor.
+    const postMat = getWallMaterial(theme, 3, WALL_H);
     for (const o of openings) {
         const dx = Math.cos(o), dz = Math.sin(o);   // door axis (outward)
-        const px = -Math.sin(o), pz = Math.cos(o);  // perpendicular (across doorway)
+        const px = -Math.sin(o), pz = Math.cos(o);  // across the doorway
         for (const side of [-1, 1]) {
-            const off = 3.4 * side;                 // just outside the 6-wide corridor
-            const post = new THREE.Mesh(new THREE.BoxGeometry(1.4, 6, 1.4), wallMat);
-            post.position.set(cx + dx * radius + px * off, 3, cz + dz * radius + pz * off);
+            const post = new THREE.Mesh(new THREE.BoxGeometry(3, WALL_H, 3), postMat);
+            post.position.set(cx + dx * radius + px * 3.5 * side, WALL_H / 2, cz + dz * radius + pz * 3.5 * side);
             post.castShadow = true;
             post.receiveShadow = true;
+            post.userData.isWall = true;
             dungeonScene.add(post);
         }
     }
 }
 
 function createRectWalls(cx, cz, halfSize, theme, gapSide = null) {
-    const wallMat = new THREE.MeshStandardMaterial({
-        color: theme.wallColor,
-        roughness: 0.8,
-        metalness: 0.2
-    });
-    
     const sides = ['north', 'south', 'east', 'west'];
     const configs = {
-        north: { pos: [cx, 3, cz - halfSize], size: [halfSize * 2, 6, 0.5], rot: 0 },
-        south: { pos: [cx, 3, cz + halfSize], size: [halfSize * 2, 6, 0.5], rot: 0 },
-        east: { pos: [cx + halfSize, 3, cz], size: [0.5, 6, halfSize * 2], rot: 0 },
-        west: { pos: [cx - halfSize, 3, cz], size: [0.5, 6, halfSize * 2], rot: 0 }
+        north: { pos: [cx, WALL_H / 2, cz - halfSize], size: [halfSize * 2, WALL_H, 0.6] },
+        south: { pos: [cx, WALL_H / 2, cz + halfSize], size: [halfSize * 2, WALL_H, 0.6] },
+        east:  { pos: [cx + halfSize, WALL_H / 2, cz], size: [0.6, WALL_H, halfSize * 2] },
+        west:  { pos: [cx - halfSize, WALL_H / 2, cz], size: [0.6, WALL_H, halfSize * 2] }
     };
-    
+
     sides.forEach(side => {
         if (side === gapSide) return;
-        
+
         const cfg = configs[side];
-        const wall = new THREE.Mesh(
-            new THREE.BoxGeometry(...cfg.size),
-            wallMat
-        );
+        const lenH = Math.max(cfg.size[0], cfg.size[2]); // longer horizontal dim for brick scale
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(...cfg.size), getWallMaterial(theme, lenH, WALL_H));
         wall.position.set(...cfg.pos);
         wall.castShadow = true;
         wall.receiveShadow = true;
+        wall.userData.isWall = true;
         dungeonScene.add(wall);
     });
 }
@@ -842,4 +882,4 @@ function createAmbientParticles(theme) {
     const particles = new THREE.Points(geometry, material);
     particles.name = 'ambientParticles';
     dungeonScene.add(particles);
-            }
+}
