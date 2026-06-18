@@ -1557,4 +1557,3 @@ export function updateEntities(delta, gameData, inputState) {
     updateBoss(delta);
     updatePillarBoss(delta);
 }
-u
