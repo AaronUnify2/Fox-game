@@ -71,6 +71,10 @@ export function setCameraMode(mode) {
     cameraMode = mode;
     inputState.cameraRelative = (mode === 'fps');
     inputState.cameraYaw = fps.yaw;
+    inputState.cameraPitch = fps.pitch;
+    // Crosshair shows only in first person — hide it in the top-down debug view.
+    const ui = document.getElementById('game-ui');
+    if (ui) ui.classList.toggle('topdown', mode === 'topdown');
     if (camera) {
         // top-down looks straight down, so orient "north" (-Z) toward screen top
         if (mode === 'topdown') camera.up.set(0, 0, -1);
@@ -97,6 +101,7 @@ function applyLook(dx, dy) {
         fps.pitch -= dy * fps.sens;
         fps.pitch = Math.max(-1.4, Math.min(1.4, fps.pitch));
         inputState.cameraYaw = fps.yaw;
+        inputState.cameraPitch = fps.pitch;
     } else if (cameraMode === 'follow') {
         cameraSettings.angle -= dx * 0.01;
         cameraSettings.targetAngle = cameraSettings.angle;
@@ -489,6 +494,7 @@ export function updateControls(delta, target, scene) {
         target.rotation.y = fps.yaw;            // body + attacks face the view
         inputState.cameraRelative = true;
         inputState.cameraYaw = fps.yaw;
+        inputState.cameraPitch = fps.pitch;
         updateFPSCamera(target);
     } else if (cameraMode === 'topdown') {
         // Zoomed-out top-down debug view
