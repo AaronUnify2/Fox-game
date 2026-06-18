@@ -38,6 +38,7 @@ const cooldowns = { attack: 0, spread: 0, burst: 0, mega: 0 };
 const baseCooldowns = { attack: 0.3, spread: 8, burst: 15, mega: 20 };
 let burstModeActive = false;
 let burstModeTimer = 0;
+let aimPitch = 0; // vertical aim angle from the camera look (FPS); 0 = level
 
 // Platform cache
 let platformsCache = [];
@@ -153,6 +154,9 @@ function updatePlayer(delta, inputState) {
     
     const { moveX, moveZ, jump, attack } = inputState;
     const userData = player.userData;
+
+    // Vertical aim follows the camera pitch while in FPS; level otherwise.
+    aimPitch = inputState.cameraRelative ? (inputState.cameraPitch || 0) : 0;
     
     // Invulnerability
     if (userData.invulnerable) {
@@ -415,8 +419,15 @@ function createProjectile(position, angle, type) {
     proj.add(new THREE.Mesh(glowGeom, glowMat));
     proj.add(new THREE.PointLight(cfg.color, 0.5, 3));
     
+    const cosP = Math.cos(aimPitch);
     proj.userData = {
-        velocity: new THREE.Vector3(Math.sin(angle) * cfg.speed, 0, Math.cos(angle) * cfg.speed),
+        // Aim along the full camera look direction (yaw + pitch) so shots are no
+        // longer locked to the horizontal plane. pitch > 0 sends the bolt upward.
+        velocity: new THREE.Vector3(
+            Math.sin(angle) * cfg.speed * cosP,
+            Math.sin(aimPitch) * cfg.speed,
+            Math.cos(angle) * cfg.speed * cosP
+        ),
         damage: cfg.damage,
         lifespan: cfg.life,
         aimAssist,
@@ -1546,3 +1557,4 @@ export function updateEntities(delta, gameData, inputState) {
     updateBoss(delta);
     updatePillarBoss(delta);
 }
+u
