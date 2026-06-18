@@ -734,3 +734,40 @@ canvas {
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(0,255,255,0.5);
 }
+
+/* ============================================
+   FPS AIMING CROSSHAIR
+   Lives inside #game-ui, so it inherits the dungeon-only visibility.
+   controls.js can add the "topdown" class to #game-ui to hide it in
+   the debug top-down view.
+   ============================================ */
+#crosshair {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 24px;
+    height: 24px;
+    transform: translate(-50%, -50%);
+    border: 2px solid rgba(0, 255, 255, 0.55);
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(0, 255, 255, 0.35), inset 0 0 4px rgba(0, 255, 255, 0.25);
+    pointer-events: none;
+    z-index: 8;
+}
+
+#crosshair::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    background: rgba(0, 255, 255, 0.95);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* Hidden in the top-down debug view (controls.js toggles this class). */
+#game-ui.topdown #crosshair {
+    display: none;
+}
