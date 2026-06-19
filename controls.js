@@ -80,6 +80,22 @@ export function setCameraMode(mode) {
         if (mode === 'topdown') camera.up.set(0, 0, -1);
         else camera.up.set(0, 1, 0);
     }
+
+    // Follow mode (town): snap the camera directly behind the player's back so it
+    // doesn't have to swing 180 deg on the first step. The camera offset uses
+    // sin/cos(angle); "behind" the facing direction rotation.y is rotation.y + PI.
+    if (mode === 'follow' && camera && cameraTarget) {
+        const behind = cameraTarget.rotation.y + Math.PI;
+        cameraSettings.angle = behind;
+        cameraSettings.targetAngle = behind;
+        cameraSettings.manualControlTimer = 0;
+        camera.position.set(
+            cameraTarget.position.x + Math.sin(behind) * cameraSettings.distance,
+            cameraTarget.position.y + cameraSettings.height,
+            cameraTarget.position.z + Math.cos(behind) * cameraSettings.distance
+        );
+        camera.lookAt(cameraTarget.position.x, cameraTarget.position.y + 1, cameraTarget.position.z);
+    }
 }
 
 export function getCameraMode() {
