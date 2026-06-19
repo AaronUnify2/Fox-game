@@ -133,6 +133,13 @@ function animate() {
         // town and the camera auto-follow rotated instead of the player walking.)
         updateEntities(delta, gameData, inputState);
         
+        if (gameState === 'town') {
+            // Keep the player inside the tree-walled plaza.
+            const p = getPlayer();
+            p.position.x = Math.max(-23, Math.min(23, p.position.x));
+            p.position.z = Math.max(-23, Math.min(23, p.position.z));
+        }
+        
         if (gameState === 'dungeon') {
             checkRoomTransitions();
             checkPlayerDeath();
