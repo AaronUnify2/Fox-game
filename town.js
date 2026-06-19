@@ -17,7 +17,13 @@ let npcs = [];
 let interactableNPC = null;
 
 // Obelisk (dungeon entrance) — placed in the NE corner so the town has room.
-const OBELISK_POS = { x: 17, z: -18 };
+const OBELISK_POS = { x: 20, z: -16 };
+const COMMONS = { x: 0, z: 2 };   // social heart of the outpost; paths meet here
+
+// rotation.y so an object's local +Z (its front/door) points at a target
+function faceToward(x, z, tx, tz) {
+    return Math.atan2(tx - x, tz - z);
+}
 
 // ============================================
 // INITIALIZATION
@@ -26,16 +32,22 @@ const OBELISK_POS = { x: 17, z: -18 };
 export async function initTown() {
     townScene = new THREE.Scene();
     townScene.background = makeNightSkyGradient();
-    townScene.fog = new THREE.FogExp2(0x0a0e1f, 0.012);
+    townScene.fog = new THREE.FogExp2(0x0a0e1f, 0.014);
     
     createLighting();
     createNightSky();
-    createGround();
+    createDistantPeaks();   // mountain range below, fading into mist
+    createPlateau();        // grassy clifftop the outpost sits on
+    createPeak();           // snow-capped peak the obelisk emerges from
+    createGround();         // worn footpaths across the grass
+    createSupplyRoad();     // the long road down off the mountain (sealed)
+    createCaravanSpace();   // cleared ground kept for the king's caravan
     createObelisk();
+    createCommons();        // well + fire where the outpost gathers
     createBuildings();
     createNPCs();
     createDecorations();
-    createPerimeterTrees();
+    createPerimeterTrees(); // wind-bent treeline along the cliff edge
     
     return Promise.resolve();
 }
@@ -103,17 +115,211 @@ function createNightSky() {
 }
 
 function createPerimeterTrees() {
-    // A ring of trees walls the town in so the player can't wander into the void.
-    const edge = 24, step = 4;
-    const nearOb = (x, z) => Math.hypot(x - OBELISK_POS.x, z - OBELISK_POS.z) < 8;
-    for (let x = -edge; x <= edge; x += step) {
-        if (!nearOb(x, -edge)) createTree(x, -edge, false);  // north row
-        if (!nearOb(x,  edge)) createTree(x,  edge, false);  // south row
+    // A wind-bent treeline around the cliff edge. Scenic — the clamp stops the player.
+    const R = 32;
+    for (let a = 0; a < Math.PI * 2; a += 0.18) {
+        const x = Math.cos(a) * R;
+        const z = Math.sin(a) * R;
+        if (z > 22 && Math.abs(x) < 8) continue;            // gap at the south gate
+        if (Math.hypot(x - 24, z + 26) < 18) continue;      // gap around the NE peak
+        const jx = x + (Math.random() - 0.5) * 3;
+        const jz = z + (Math.random() - 0.5) * 3;
+        createTree(jx, jz, false);
     }
-    for (let z = -edge + step; z <= edge - step; z += step) {
-        if (!nearOb(-edge, z)) createTree(-edge, z, false);  // west column
-        if (!nearOb( edge, z)) createTree( edge, z, false);  // east column
+}
+
+// ============================================
+// TERRAIN (mountaintop outpost)
+// ============================================
+
+function createDistantPeaks() {
+    // A ring of far peaks rising over the cliff edge, lost in the mist.
+    const rock = new THREE.MeshStandardMaterial({ color: 0x1a2030, roughness: 1.0 });
+    const snow = new THREE.MeshStandardMaterial({ color: 0x6f7e9c, roughness: 1.0 });
+    const ring = [
+        [-70, -55, 38, 60], [55, -78, 46, 72], [88, -10, 34, 52],
+        [-92, 12, 42, 64], [22, -108, 52, 82], [-42, 82, 36, 50]
+    ];
+    for (const [x, z, r, h] of ring) {
+        const peak = new THREE.Mesh(new THREE.ConeGeometry(r, h, 6), rock);
+        peak.position.set(x, h / 2 - 40, z);   // bases sunk below the plateau
+        townScene.add(peak);
+        const cap = new THREE.Mesh(new THREE.ConeGeometry(r * 0.32, h * 0.22, 6), snow);
+        cap.position.set(x, h - 40 - h * 0.06, z);
+        townScene.add(cap);
     }
+}
+
+function createPlateau() {
+    // Grassy clifftop the outpost stands on
+    const grass = new THREE.Mesh(
+        new THREE.CircleGeometry(34, 48),
+        new THREE.MeshStandardMaterial({ color: 0x2f3d28, roughness: 1.0 })
+    );
+    grass.rotation.x = -Math.PI / 2;
+    grass.receiveShadow = true;
+    townScene.add(grass);
+    
+    // Bare, trodden earth just inside the rim (centuries of footfall)
+    const worn = new THREE.Mesh(
+        new THREE.RingGeometry(29, 34, 48),
+        new THREE.MeshStandardMaterial({ color: 0x3b4030, roughness: 1.0 })
+    );
+    worn.rotation.x = -Math.PI / 2;
+    worn.position.y = 0.005;
+    worn.receiveShadow = true;
+    townScene.add(worn);
+    
+    // Cliff face dropping away into the dark
+    const cliff = new THREE.Mesh(
+        new THREE.CylinderGeometry(34, 27, 34, 48, 1, true),
+        new THREE.MeshStandardMaterial({ color: 0x352f29, roughness: 1.0, side: THREE.DoubleSide })
+    );
+    cliff.position.y = -17;
+    townScene.add(cliff);
+}
+
+function createPeak() {
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x423b33, roughness: 1.0 });
+    const snowMat = new THREE.MeshStandardMaterial({
+        color: 0xeaf0ff, roughness: 0.9, emissive: 0x223044, emissiveIntensity: 0.15
+    });
+    
+    // The peak itself, rising behind the obelisk
+    const peak = new THREE.Mesh(new THREE.ConeGeometry(16, 40, 7), rockMat);
+    peak.position.set(30, 20, -30);
+    townScene.add(peak);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(7, 14, 7), snowMat);
+    cap.position.set(30, 35, -30);
+    townScene.add(cap);
+    
+    // Shoulder rock the obelisk emerges from (ties grass to peak)
+    const mound = new THREE.Mesh(new THREE.ConeGeometry(9, 7, 6), rockMat);
+    mound.position.set(OBELISK_POS.x, 1, OBELISK_POS.z);
+    mound.castShadow = true;
+    townScene.add(mound);
+    
+    // Outcrops scattered at the foot
+    const outcrops = [[24, -8, 2.5], [26, -23, 3], [13, -23, 2], [22, -27, 3.5]];
+    for (const [x, z, r] of outcrops) {
+        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), rockMat);
+        rock.position.set(x, r * 0.4, z);
+        rock.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+        rock.castShadow = true;
+        townScene.add(rock);
+    }
+    
+    // Scenic switchback climbing the peak (visual only)
+    const pathMat = new THREE.MeshStandardMaterial({ color: 0x55493a, roughness: 1.0 });
+    const climb = [
+        [23, -22, 3, 6, 0.4], [26, -25, 7, 3, 0.6],
+        [27, -28, 3, 6, 0.5], [29, -30, 6, 3, 0.7]
+    ];
+    for (const [x, z, sx, sz, y] of climb) {
+        const seg = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.4, sz), pathMat);
+        seg.position.set(x, y, z);
+        townScene.add(seg);
+    }
+}
+
+function createSupplyRoad() {
+    // The only road up the mountain, switchbacking down off the south edge.
+    const stone = new THREE.MeshStandardMaterial({ color: 0x4a443a, roughness: 1.0 });
+    const ledges = [
+        [0, 30, 10, 5, -1], [6, 36, 12, 5, -4], [-4, 42, 14, 5, -8], [4, 49, 16, 6, -13]
+    ];
+    for (const [x, z, sx, sz, y] of ledges) {
+        const seg = new THREE.Mesh(new THREE.BoxGeometry(sx, 1, sz), stone);
+        seg.position.set(x, y, z);
+        townScene.add(seg);
+    }
+    // Gate sealing the way — the player can't leave
+    const wood = new THREE.MeshStandardMaterial({ color: 0x3a2c1e, roughness: 0.95 });
+    for (const px of [-3.5, 3.5]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 5, 8), wood);
+        post.position.set(px, 2.5, 25);
+        post.castShadow = true;
+        townScene.add(post);
+    }
+    for (const by of [1.6, 3.2]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(8, 0.5, 0.4), wood);
+        bar.position.set(0, by, 25);
+        townScene.add(bar);
+    }
+}
+
+function createCaravanSpace() {
+    // Rutted ground kept clear for the king's caravan when he arrives.
+    const dirt = new THREE.Mesh(
+        new THREE.PlaneGeometry(13, 9),
+        new THREE.MeshStandardMaterial({ color: 0x4a3f30, roughness: 1.0 })
+    );
+    dirt.rotation.x = -Math.PI / 2;
+    dirt.position.set(-10, 0.012, 18);
+    dirt.receiveShadow = true;
+    townScene.add(dirt);
+    
+    const wood = new THREE.MeshStandardMaterial({ color: 0x3a2c1e, roughness: 0.95 });
+    for (const [x, z] of [[-16, 14], [-16, 22], [-4, 14], [-4, 22]]) {
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 1.4, 6), wood);
+        p.position.set(x, 0.7, z);
+        p.castShadow = true;
+        townScene.add(p);
+    }
+    // The king's standard, marking the reserved ground
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 7, 8), wood);
+    pole.position.set(-16, 3.5, 18);
+    pole.castShadow = true;
+    townScene.add(pole);
+    const flag = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.4, 1.4),
+        new THREE.MeshStandardMaterial({
+            color: 0x7a1f2b, roughness: 0.8, side: THREE.DoubleSide,
+            emissive: 0x2a0a0e, emissiveIntensity: 0.3
+        })
+    );
+    flag.position.set(-14.8, 5.5, 18);
+    townScene.add(flag);
+}
+
+function createCommons() {
+    const stone = new THREE.MeshStandardMaterial({ color: 0x4a4640, roughness: 1.0 });
+    const wood = new THREE.MeshStandardMaterial({ color: 0x3a2c1e, roughness: 0.95 });
+    
+    // Stone well at the heart of the outpost
+    const well = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 1, 12, 1, true), stone);
+    well.position.set(COMMONS.x, 0.5, COMMONS.z);
+    townScene.add(well);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.18, 8, 16), stone);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.set(COMMONS.x, 1, COMMONS.z);
+    townScene.add(rim);
+    for (const dx of [-1.1, 1.1]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.4, 6), wood);
+        post.position.set(COMMONS.x + dx, 1.6, COMMONS.z);
+        townScene.add(post);
+    }
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(1.8, 1, 4), wood);
+    roof.position.set(COMMONS.x, 3.2, COMMONS.z);
+    roof.rotation.y = Math.PI / 4;
+    townScene.add(roof);
+    
+    // Fire pit a few steps off, where people gather against the cold
+    const pit = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.1, 0.3, 12), stone);
+    pit.position.set(COMMONS.x - 4, 0.15, COMMONS.z + 1);
+    townScene.add(pit);
+    const fire = new THREE.Mesh(
+        new THREE.ConeGeometry(0.6, 1.2, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff7722, transparent: true, opacity: 0.9 })
+    );
+    fire.position.set(COMMONS.x - 4, 0.8, COMMONS.z + 1);
+    townScene.add(fire);
+    const fireLight = new THREE.PointLight(0xff7733, 2.5, 14, 1.6);
+    fireLight.position.set(COMMONS.x - 4, 1.2, COMMONS.z + 1);
+    townScene.add(fireLight);
+    
+    createBench(COMMONS.x - 4, COMMONS.z + 3.4, 0);
+    createBench(COMMONS.x - 7, COMMONS.z + 1, Math.PI / 2);
 }
 
 // ============================================
@@ -154,59 +360,34 @@ function createLighting() {
 // ============================================
 
 function createGround() {
-    // Main plaza (stone tiles)
-    const plazaGeom = new THREE.PlaneGeometry(50, 50, 10, 10);
-    const plazaMat = new THREE.MeshStandardMaterial({
-        color: 0x3a3a4a,
-        roughness: 0.9,
-        metalness: 0.1
-    });
-    const plaza = new THREE.Mesh(plazaGeom, plazaMat);
-    plaza.rotation.x = -Math.PI / 2;
-    plaza.receiveShadow = true;
-    townScene.add(plaza);
+    // Worn dirt footpaths tying the gate, commons, buildings and obelisk together.
+    const DIRT = 0x55493a;
+    createRoad(0, 12, 6, 22, DIRT);              // gate -> commons
+    createRoad(0, -8, 6, 22, DIRT);              // commons -> north work yard
+    createRoad(10, -16, 24, 5, DIRT);            // yard -> obelisk (E spur)
+    createRoad(-6, 18, 10, 4, DIRT);             // spur to the caravan ground
     
-    // Tile pattern
-    const tileGeom = new THREE.PlaneGeometry(4, 4);
-    const tileMat = new THREE.MeshStandardMaterial({
-        color: 0x2a2a3a,
-        roughness: 0.85
-    });
+    // Trodden doorstep patches in front of each building
+    const steps = [[10, 10], [-12, 6], [-12, -5], [2, -10.5], [8, -6.5]];
+    for (const [x, z] of steps) createRoad(x, z, 4, 4, 0x4a4030);
     
-    for (let x = -20; x <= 20; x += 5) {
-        for (let z = -20; z <= 20; z += 5) {
-            const tile = new THREE.Mesh(tileGeom, tileMat);
-            tile.rotation.x = -Math.PI / 2;
-            tile.position.set(x, 0.01, z);
-            tile.receiveShadow = true;
-            townScene.add(tile);
-        }
-    }
-    
-    // Stone pathways: main street, cross street, and a spur to the obelisk.
-    createRoad(0, -3, 7, 28);    // main street (N-S)
-    createRoad(0, -6, 24, 5);    // cross street (E-W)
-    createRoad(10, -17, 16, 4);  // spur to the obelisk in the NE corner
-    
-    // Glowing runes leading along the spur to the obelisk
+    // Glowing runes worn into the path up to the obelisk
     const runeMat = new THREE.MeshBasicMaterial({
-        color: 0x00ffff,
-        transparent: true,
-        opacity: 0.35
+        color: 0x00ffff, transparent: true, opacity: 0.35
     });
     for (let i = 0; i < 6; i++) {
         const t = i / 5;
         const rune = new THREE.Mesh(new THREE.CircleGeometry(0.45, 6), runeMat);
         rune.rotation.x = -Math.PI / 2;
-        rune.position.set(3 + t * (OBELISK_POS.x - 3), 0.02, -17 + t * (OBELISK_POS.z + 17));
+        rune.position.set(2 + t * (OBELISK_POS.x - 2), 0.02, -16 + t * (OBELISK_POS.z + 16));
         townScene.add(rune);
     }
 }
 
-function createRoad(cx, cz, sizeX, sizeZ) {
+function createRoad(cx, cz, sizeX, sizeZ, color = 0x4a4658) {
     const road = new THREE.Mesh(
         new THREE.PlaneGeometry(sizeX, sizeZ),
-        new THREE.MeshStandardMaterial({ color: 0x4a4658, roughness: 0.95, metalness: 0.05 })
+        new THREE.MeshStandardMaterial({ color, roughness: 0.98, metalness: 0.0 })
     );
     road.rotation.x = -Math.PI / 2;
     road.position.set(cx, 0.015, cz);
@@ -330,22 +511,19 @@ function createObelisk() {
 // BUILDINGS
 // ============================================
 
-// Building/NPC facings (rotation.y so local +Z — the front — points a way).
-const FACE_E = Math.PI / 2;   // door faces east  (+X)
-const FACE_W = -Math.PI / 2;  // door faces west  (-X)
-const FACE_S = 0;             // door faces south (+Z, toward the entrance)
-
 function createBuildings() {
-    // A main street (x=0) lined with shops; the Keeper caps the north end.
+    // Support near the gate/caravan (south), research up by the obelisk (north).
+    // Every building opens toward the commons, so the layout reads as lived-in.
     const layout = [
-        { x: -8, z: 0,   rot: FACE_E, type: 'scholar',    color: 0x2a3a4a, name: "Scholar's Tower" },
-        { x: -8, z: -11, rot: FACE_E, type: 'apprentice', color: 0x3a3a5a, name: "Apprentice's Study" },
-        { x:  7, z: 0,   rot: FACE_W, type: 'merchant',   color: 0x4a3a3a, name: "Merchant's Stall" },
-        { x:  7, z: -11, rot: FACE_W, type: 'wanderer',   color: 0x3a4a3a, name: "Wanderer's Rest" },
-        { x:  0, z: -20, rot: FACE_S, type: 'keeper',     color: 0x3a3a4a, name: "Keeper's Archive" }
+        { x:  13, z: 12,  type: 'merchant',   color: 0x4a3a3a, name: 'Quartermaster' },
+        { x: -16, z: 7,   type: 'wanderer',   color: 0x3a4a3a, name: "Wanderer's Lodge" },
+        { x: -15, z: -7,  type: 'apprentice', color: 0x3a3a5a, name: "Apprentice's Study" },
+        { x:   3, z: -14, type: 'scholar',    color: 0x2a3a4a, name: 'Observatory' },
+        { x:  10, z: -9,  type: 'keeper',     color: 0x3a3a4a, name: "Keeper's Archive" }
     ];
     for (const b of layout) {
-        createBuilding(b.x, b.z, b.rot, b.type, b.color, b.name);
+        const rot = faceToward(b.x, b.z, COMMONS.x, COMMONS.z);
+        createBuilding(b.x, b.z, rot, b.type, b.color, b.name);
     }
 }
 
@@ -417,26 +595,26 @@ function createBuilding(x, z, rotationY, npcType, color, name) {
 // ============================================
 
 function createNPCs() {
-    // Each NPC stands just outside their door, facing the street.
+    // bx/bz mirror the building positions in createBuildings().
     const roster = [
-        { type: 'scholar',    bx: -8, bz: 0,   rot: FACE_E, robeColor: 0x1a237e, accentColor: 0x00ffff, name: 'The Scholar',
-          dialogue: 'The obelisk holds many secrets. I can teach you to harness its power.' },
-        { type: 'apprentice', bx: -8, bz: -11, rot: FACE_E, robeColor: 0x4a148c, accentColor: 0xbf00ff, name: "Scholar's Apprentice",
-          dialogue: 'My master taught me to enhance the connection between mage and obelisk.' },
-        { type: 'merchant',   bx: 7,  bz: 0,   rot: FACE_W, robeColor: 0x5d4037, accentColor: 0xffcc00, name: 'The Merchant',
-          dialogue: 'Supplies for the depths. Reasonable prices.' },
-        { type: 'wanderer',   bx: 7,  bz: -11, rot: FACE_W, robeColor: 0x37474f, accentColor: 0x88cc88, name: 'The Wanderer',
-          dialogue: 'I have traveled the lower floors. Listen well, if you wish to survive.' },
-        { type: 'keeper',     bx: 0,  bz: -20, rot: FACE_S, robeColor: 0x263238, accentColor: 0x90a4ae, name: 'The Keeper',
-          dialogue: 'I maintain the records. Your progress is etched in the obelisk itself.' }
+        { type: 'scholar',    bx: 3,   bz: -14, robeColor: 0x1a237e, accentColor: 0x00ffff, name: 'The Scholar',
+          dialogue: 'I read the obelisk by night, as my predecessors did for three hundred years. It is... stirring.' },
+        { type: 'apprentice', bx: -15, bz: -7,  robeColor: 0x4a148c, accentColor: 0xbf00ff, name: "The Apprentice",
+          dialogue: 'The Scholar lets me log the fainter pulses. One day I will read the deep ones too.' },
+        { type: 'merchant',   bx: 13,  bz: 12,  robeColor: 0x5d4037, accentColor: 0xffcc00, name: 'The Quartermaster',
+          dialogue: 'Everything here came up the one road on muleback. Spend what I have wisely.' },
+        { type: 'wanderer',   bx: -16, bz: 7,   robeColor: 0x37474f, accentColor: 0x88cc88, name: 'The Wanderer',
+          dialogue: 'I climbed all this way to see it for myself. Few do. Fewer go below and return.' },
+        { type: 'keeper',     bx: 10,  bz: -9,  robeColor: 0x263238, accentColor: 0x90a4ae, name: 'The Keeper',
+          dialogue: 'Centuries of logs, all in my care. Your every descent is written into the record.' }
     ];
 
     for (const n of roster) {
-        // step out of the doorway (door is local +Z of the building) onto the street
-        const nx = n.bx + Math.sin(n.rot) * 3.5;
-        const nz = n.bz + Math.cos(n.rot) * 3.5;
-        // NPC model's face is on its local -Z, so add PI to look out toward the street.
-        createNPC(n.type, nx, nz, n.rot + Math.PI, {
+        const doorRot = faceToward(n.bx, n.bz, COMMONS.x, COMMONS.z);
+        const nx = n.bx + Math.sin(doorRot) * 3.5;   // step onto the doorstep
+        const nz = n.bz + Math.cos(doorRot) * 3.5;
+        // NPC face is on local -Z, so +PI turns them out toward the commons/player.
+        createNPC(n.type, nx, nz, doorRot + Math.PI, {
             robeColor: n.robeColor, accentColor: n.accentColor, name: n.name, dialogue: n.dialogue
         });
     }
@@ -525,33 +703,25 @@ function createNPC(type, x, z, rotationY, config) {
 // ============================================
 
 function createDecorations() {
-    // Lamp posts lining the main street and the spur to the obelisk
-    const lampPositions = [
-        [-4.5, 5], [4.5, 5],
-        [-4.5, -5], [4.5, -5],
-        [-4.5, -15], [4.5, -15],
-        [7, -16], [10.5, -16]
+    // Lanterns along the main path, the obelisk spur, and the caravan ground
+    const lamps = [
+        [-4, 18], [4, 18], [-4, 8], [4, 8],
+        [-4, -2], [4, -2], [-4, -12], [4, -12],
+        [7, -15], [12, -15], [-10.5, 13]
     ];
-    lampPositions.forEach(([x, z]) => {
-        createLampPost(x, z);
-    });
+    lamps.forEach(([x, z]) => createLampPost(x, z));
     
-    // Benches along the cross street
-    createBench(-6, -6, 0);
-    createBench(6, -6, 0);
+    // Quartermaster's stores stacked outside the door
+    createBarrel(16, 14);
+    createBarrel(17, 13);
+    createCrate(15, 15);
+    createCrate(16.5, 15.5);
     
-    // Barrels and crates beside the merchant
-    createBarrel(11, 2);
-    createBarrel(12, 1);
-    createCrate(11, 3);
+    // A couple of hardy trees rooted on the open grass
+    createTree(-23, -13);
+    createTree(8, 17);
     
-    // Trees framing the plaza (NE corner left clear for the obelisk)
-    createTree(-22, 8);
-    createTree(22, 8);
-    createTree(-22, -22);
-    createTree(-14, 10);
-    
-    // Floating particles
+    // Drifting motes / fine snow on the wind
     createAmbientParticles();
 }
 
