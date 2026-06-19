@@ -241,24 +241,30 @@ function createObelisk() {
 // BUILDINGS
 // ============================================
 
-function createBuildings() {
-    // Scholar's Tower (left)
-    createBuilding(-12, -5, 'scholar', 0x2a3a4a, "Scholar's Tower");
-    
-    // Apprentice's Study (left back)
-    createBuilding(-15, -12, 'apprentice', 0x3a3a5a, "Apprentice's Study");
-    
-    // Merchant's Tent (right)
-    createBuilding(12, -5, 'merchant', 0x4a3a3a, "Merchant's Stall");
-    
-    // Wanderer's Corner (right back)
-    createBuilding(15, -12, 'wanderer', 0x3a4a3a, "Wanderer's Rest");
-    
-    // Keeper's Archive (back center-right)
-    createBuilding(5, -20, 'keeper', 0x3a3a4a, "Keeper's Archive");
+// All buildings/NPCs face this plaza focal point (just south of the obelisk),
+// so their fronts open toward the player instead of all pointing the same way.
+const TOWN_FOCUS = { x: 0, z: -8 };
+
+function faceFocus(x, z) {
+    // rotation.y so the object's local +Z (its front) points at the focus
+    return Math.atan2(TOWN_FOCUS.x - x, TOWN_FOCUS.z - z);
 }
 
-function createBuilding(x, z, npcType, color, name) {
+function createBuildings() {
+    // Ring the plaza; each building is rotated to face the centre.
+    const layout = [
+        { x: -16, z: -5,  type: 'scholar',    color: 0x2a3a4a, name: "Scholar's Tower" },
+        { x: -12, z: -18, type: 'apprentice', color: 0x3a3a5a, name: "Apprentice's Study" },
+        { x:  16, z: -4,  type: 'merchant',   color: 0x4a3a3a, name: "Merchant's Stall" },
+        { x:  12, z: -18, type: 'wanderer',   color: 0x3a4a3a, name: "Wanderer's Rest" },
+        { x:   0, z: -25, type: 'keeper',     color: 0x3a3a4a, name: "Keeper's Archive" }
+    ];
+    for (const b of layout) {
+        createBuilding(b.x, b.z, faceFocus(b.x, b.z), b.type, b.color, b.name);
+    }
+}
+
+function createBuilding(x, z, rotationY, npcType, color, name) {
     const group = new THREE.Group();
     
     // Main structure
@@ -316,6 +322,7 @@ function createBuilding(x, z, npcType, color, name) {
     group.add(light);
     
     group.position.set(x, 0, z);
+    group.rotation.y = rotationY;
     group.userData = { type: 'building', npcType, name };
     townScene.add(group);
 }
@@ -325,48 +332,33 @@ function createBuilding(x, z, npcType, color, name) {
 // ============================================
 
 function createNPCs() {
-    // Scholar - ability teacher
-    createNPC('scholar', -12, -2, {
-        robeColor: 0x1a237e,
-        accentColor: 0x00ffff,
-        name: 'The Scholar',
-        dialogue: 'The obelisk holds many secrets. I can teach you to harness its power.'
-    });
-    
-    // Apprentice - upgrade vendor
-    createNPC('apprentice', -15, -9, {
-        robeColor: 0x4a148c,
-        accentColor: 0xbf00ff,
-        name: "Scholar's Apprentice",
-        dialogue: 'My master taught me to enhance the connection between mage and obelisk.'
-    });
-    
-    // Merchant - health potions
-    createNPC('merchant', 12, -2, {
-        robeColor: 0x5d4037,
-        accentColor: 0xffcc00,
-        name: 'The Merchant',
-        dialogue: 'Supplies for the depths. Reasonable prices.'
-    });
-    
-    // Wanderer - hints and lore
-    createNPC('wanderer', 15, -9, {
-        robeColor: 0x37474f,
-        accentColor: 0x88cc88,
-        name: 'The Wanderer',
-        dialogue: 'I have traveled the lower floors. Listen well, if you wish to survive.'
-    });
-    
-    // Keeper - save/load
-    createNPC('keeper', 5, -17, {
-        robeColor: 0x263238,
-        accentColor: 0x90a4ae,
-        name: 'The Keeper',
-        dialogue: 'I maintain the records. Your progress is etched in the obelisk itself.'
-    });
+    // Each NPC stands just in front of their building (toward the plaza) and
+    // faces the centre, so the player meets them face-to-face on approach.
+    const roster = [
+        { type: 'scholar',    bx: -16, bz: -5,  robeColor: 0x1a237e, accentColor: 0x00ffff, name: 'The Scholar',
+          dialogue: 'The obelisk holds many secrets. I can teach you to harness its power.' },
+        { type: 'apprentice', bx: -12, bz: -18, robeColor: 0x4a148c, accentColor: 0xbf00ff, name: "Scholar's Apprentice",
+          dialogue: 'My master taught me to enhance the connection between mage and obelisk.' },
+        { type: 'merchant',   bx: 16,  bz: -4,  robeColor: 0x5d4037, accentColor: 0xffcc00, name: 'The Merchant',
+          dialogue: 'Supplies for the depths. Reasonable prices.' },
+        { type: 'wanderer',   bx: 12,  bz: -18, robeColor: 0x37474f, accentColor: 0x88cc88, name: 'The Wanderer',
+          dialogue: 'I have traveled the lower floors. Listen well, if you wish to survive.' },
+        { type: 'keeper',     bx: 0,   bz: -25, robeColor: 0x263238, accentColor: 0x90a4ae, name: 'The Keeper',
+          dialogue: 'I maintain the records. Your progress is etched in the obelisk itself.' }
+    ];
+
+    for (const n of roster) {
+        const dx = TOWN_FOCUS.x - n.bx, dz = TOWN_FOCUS.z - n.bz;
+        const len = Math.hypot(dx, dz) || 1;
+        const nx = n.bx + (dx / len) * 4.2; // step out in front of the door
+        const nz = n.bz + (dz / len) * 4.2;
+        createNPC(n.type, nx, nz, Math.atan2(dx, dz), {
+            robeColor: n.robeColor, accentColor: n.accentColor, name: n.name, dialogue: n.dialogue
+        });
+    }
 }
 
-function createNPC(type, x, z, config) {
+function createNPC(type, x, z, rotationY, config) {
     const group = new THREE.Group();
     
     // Body
@@ -431,6 +423,7 @@ function createNPC(type, x, z, config) {
     group.add(indicator);
     
     group.position.set(x, 0, z);
+    group.rotation.y = rotationY;
     group.userData = {
         type: 'npc',
         npcType: type,
@@ -448,31 +441,30 @@ function createNPC(type, x, z, config) {
 // ============================================
 
 function createDecorations() {
-    // Lamp posts
+    // Lamp posts line the avenue from the entrance up to the obelisk
     const lampPositions = [
-        [-8, 5], [8, 5],
-        [-8, -5], [8, -5],
-        [-5, -15], [10, -15]
+        [-5, 3], [5, 3],
+        [-5, -7], [5, -7],
+        [-6, -14], [6, -14]
     ];
-    
     lampPositions.forEach(([x, z]) => {
         createLampPost(x, z);
     });
     
-    // Benches
-    createBench(-6, 2, 0);
-    createBench(6, 2, 0);
+    // Benches flanking the plaza, turned toward the avenue
+    createBench(-8, 0, Math.PI / 2);
+    createBench(8, 0, -Math.PI / 2);
     
-    // Barrels and crates near merchant
-    createBarrel(14, -3);
-    createBarrel(14.5, -4);
-    createCrate(13, -4);
+    // Barrels and crates beside the merchant (east side)
+    createBarrel(15, -8);
+    createBarrel(16, -9);
+    createCrate(14, -9);
     
-    // Trees/plants around edges
-    createTree(-20, 5);
-    createTree(20, 5);
-    createTree(-20, -10);
-    createTree(20, -10);
+    // Trees framing the corners of the plaza
+    createTree(-22, 6);
+    createTree(22, 6);
+    createTree(-21, -23);
+    createTree(21, -23);
     
     // Floating particles
     createAmbientParticles();
@@ -694,4 +686,4 @@ export function getInteractableNPC() {
 export function showNPCDialogue(npc) {
     // This would show floating dialogue above NPC
     // Implementation depends on UI system
-              }
+}
