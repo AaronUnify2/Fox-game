@@ -1,697 +1,654 @@
 // ============================================
-// ECHOES OF THE OBELISK - Town System
-// Safe hub with NPCs, shops, and obelisk entrance
+// ECHOES OF THE OBELISK - Controls System
+// Mobile: Joystick left, buttons right, swipe camera
+// Desktop: WASD + mouse
 // ============================================
 
 import * as THREE from 'three';
+import { checkNPCInteraction, triggerNPCInteraction } from './town.js';
 
-// Callback for NPC interaction (set by game.js to avoid circular import)
-let npcInteractionCallback = null;
+let camera;
+let canvas;
+let cameraTarget = null;
 
-export function setNPCInteractionCallback(callback) {
-    npcInteractionCallback = callback;
+// Input state
+const inputState = {
+    moveX: 0,
+    moveZ: 0,
+    jump: false,
+    attack: false,
+    ability1: false,
+    ability2: false,
+    ability3: false,
+    lookX: 0,
+    lookY: 0
+};
+
+// Touch tracking
+const touches = {
+    joystick: null,
+    camera: null
+};
+
+// Joystick state
+const joystick = {
+    active: false,
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+    element: null,
+    knob: null
+};
+
+// Camera settings
+const cameraSettings = {
+    distance: 12,
+    height: 8,
+    angle: Math.PI, // Start behind player
+    targetAngle: Math.PI,
+    angleSmoothing: 3,
+    autoFollowEnabled: true,
+    manualControlTimer: 0,
+    minDistance: 3,
+    smoothing: 0.1
+};
+
+// Raycaster for camera collision
+const raycaster = new THREE.Raycaster();
+
+// ============================================
+// CAMERA MODES
+//   'follow'  -> third-person orbit (town)
+//   'fps'     -> first person (dungeon default)
+//   'topdown' -> zoomed-out top-down debug view (dungeon toggle)
+// ============================================
+let cameraMode = 'follow';
+const fps = { yaw: 0, pitch: -0.05, eyeHeight: 1.6, sens: 0.005 };
+const topDown = { height: 55 };
+
+export function setCameraMode(mode) {
+    cameraMode = mode;
+    inputState.cameraRelative = (mode === 'fps');
+    inputState.cameraYaw = fps.yaw;
+    inputState.cameraPitch = fps.pitch;
+    // Crosshair shows only in first person — hide it in the top-down debug view.
+    const ui = document.getElementById('game-ui');
+    if (ui) ui.classList.toggle('topdown', mode === 'topdown');
+    if (camera) {
+        // top-down looks straight down, so orient "north" (-Z) toward screen top
+        if (mode === 'topdown') camera.up.set(0, 0, -1);
+        else camera.up.set(0, 1, 0);
+    }
+
+    // Follow mode (town): snap the camera directly behind the player's back so it
+    // doesn't have to swing 180 deg on the first step. The camera offset uses
+    // sin/cos(angle); "behind" the facing direction rotation.y is rotation.y + PI.
+    if (mode === 'follow' && camera && cameraTarget) {
+        const behind = cameraTarget.rotation.y + Math.PI;
+        cameraSettings.angle = behind;
+        cameraSettings.targetAngle = behind;
+        cameraSettings.manualControlTimer = 0;
+        camera.position.set(
+            cameraTarget.position.x + Math.sin(behind) * cameraSettings.distance,
+            cameraTarget.position.y + cameraSettings.height,
+            cameraTarget.position.z + Math.cos(behind) * cameraSettings.distance
+        );
+        camera.lookAt(cameraTarget.position.x, cameraTarget.position.y + 1, cameraTarget.position.z);
+    }
 }
 
-let townScene;
-let npcs = [];
-let interactableNPC = null;
+export function getCameraMode() {
+    return cameraMode;
+}
+
+// Toggle between FPS and top-down (dungeon only)
+export function toggleDungeonCamera() {
+    if (cameraMode === 'follow') return; // no-op in town
+    setCameraMode(cameraMode === 'topdown' ? 'fps' : 'topdown');
+    const btn = document.getElementById('btn-camera-toggle');
+    if (btn) btn.textContent = (cameraMode === 'topdown') ? 'FPS VIEW' : 'TOP-DOWN';
+}
+
+// Apply look input (swipe/mouse drag) according to the active camera mode
+function applyLook(dx, dy) {
+    if (cameraMode === 'fps') {
+        fps.yaw -= dx * fps.sens;
+        fps.pitch -= dy * fps.sens;
+        fps.pitch = Math.max(-1.4, Math.min(1.4, fps.pitch));
+        inputState.cameraYaw = fps.yaw;
+        inputState.cameraPitch = fps.pitch;
+    } else if (cameraMode === 'follow') {
+        cameraSettings.angle -= dx * 0.01;
+        cameraSettings.targetAngle = cameraSettings.angle;
+        cameraSettings.height = Math.max(4, Math.min(15, cameraSettings.height - dy * 0.02));
+        cameraSettings.manualControlTimer = 1.5;
+    }
+    // topdown: look input ignored
+}
 
 // ============================================
 // INITIALIZATION
 // ============================================
 
-export async function initTown() {
-    townScene = new THREE.Scene();
-    townScene.background = new THREE.Color(0x1a1520);
-    townScene.fog = new THREE.FogExp2(0x1a1520, 0.015);
+export async function initControls(cam, canvasElement) {
+    camera = cam;
+    canvas = canvasElement;
     
-    createLighting();
-    createGround();
-    createObelisk();
-    createBuildings();
-    createNPCs();
-    createDecorations();
+    setupJoystick();
+    setupButtons();
+    setupCameraControls();
+    setupKeyboard();
+    setupGlobalTouchHandlers();
     
     return Promise.resolve();
 }
 
-export function getTownScene() {
-    return townScene;
+// ============================================
+// JOYSTICK (Left side)
+// ============================================
+
+function setupJoystick() {
+    joystick.element = document.getElementById('joystick-zone');
+    joystick.knob = document.getElementById('joystick-knob');
+    
+    if (!joystick.element) return;
+    
+    joystick.element.addEventListener('touchstart', handleJoystickStart, { passive: false });
+    joystick.element.addEventListener('touchmove', handleJoystickMove, { passive: false });
+    joystick.element.addEventListener('touchend', handleJoystickEnd, { passive: false });
+    joystick.element.addEventListener('touchcancel', handleJoystickEnd, { passive: false });
 }
 
-export function disposeTown() {
-    // Cleanup if needed
+function handleJoystickStart(e) {
+    e.preventDefault();
+    const touch = e.changedTouches[0];
+    touches.joystick = touch.identifier;
+    
+    const rect = joystick.element.getBoundingClientRect();
+    joystick.startX = rect.left + rect.width / 2;
+    joystick.startY = rect.top + rect.height / 2;
+    joystick.currentX = touch.clientX;
+    joystick.currentY = touch.clientY;
+    joystick.active = true;
+    
+    updateJoystickVisual();
 }
 
-// ============================================
-// LIGHTING
-// ============================================
-
-function createLighting() {
-    // Ambient
-    const ambient = new THREE.AmbientLight(0x6680b0, 1.0);
-    townScene.add(ambient);
+function handleJoystickMove(e) {
+    e.preventDefault();
     
-    // Hemisphere
-    const hemi = new THREE.HemisphereLight(0x88aae0, 0x33304a, 1.1);
-    townScene.add(hemi);
-    
-    // Main directional (moonlight)
-    const moon = new THREE.DirectionalLight(0xaab8e0, 1.1);
-    moon.position.set(-20, 30, 10);
-    moon.castShadow = true;
-    moon.shadow.mapSize.width = 2048;
-    moon.shadow.mapSize.height = 2048;
-    moon.shadow.camera.near = 0.5;
-    moon.shadow.camera.far = 100;
-    moon.shadow.camera.left = -30;
-    moon.shadow.camera.right = 30;
-    moon.shadow.camera.top = 30;
-    moon.shadow.camera.bottom = -30;
-    townScene.add(moon);
-    
-    // Obelisk glow
-    const obeliskLight = new THREE.PointLight(0x00ffff, 2, 30);
-    obeliskLight.position.set(0, 10, -15);
-    townScene.add(obeliskLight);
-}
-
-// ============================================
-// GROUND
-// ============================================
-
-function createGround() {
-    // Main plaza (stone tiles)
-    const plazaGeom = new THREE.PlaneGeometry(50, 50, 10, 10);
-    const plazaMat = new THREE.MeshStandardMaterial({
-        color: 0x3a3a4a,
-        roughness: 0.9,
-        metalness: 0.1
-    });
-    const plaza = new THREE.Mesh(plazaGeom, plazaMat);
-    plaza.rotation.x = -Math.PI / 2;
-    plaza.receiveShadow = true;
-    townScene.add(plaza);
-    
-    // Tile pattern
-    const tileGeom = new THREE.PlaneGeometry(4, 4);
-    const tileMat = new THREE.MeshStandardMaterial({
-        color: 0x2a2a3a,
-        roughness: 0.85
-    });
-    
-    for (let x = -20; x <= 20; x += 5) {
-        for (let z = -20; z <= 20; z += 5) {
-            const tile = new THREE.Mesh(tileGeom, tileMat);
-            tile.rotation.x = -Math.PI / 2;
-            tile.position.set(x, 0.01, z);
-            tile.receiveShadow = true;
-            townScene.add(tile);
+    for (const touch of e.changedTouches) {
+        if (touch.identifier === touches.joystick) {
+            joystick.currentX = touch.clientX;
+            joystick.currentY = touch.clientY;
+            
+            const dx = joystick.currentX - joystick.startX;
+            const dy = joystick.currentY - joystick.startY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const maxDist = 50;
+            
+            if (dist > 0) {
+                const clampedDist = Math.min(dist, maxDist);
+                inputState.moveX = (dx / dist) * (clampedDist / maxDist);
+                inputState.moveZ = (dy / dist) * (clampedDist / maxDist);
+            }
+            
+            updateJoystickVisual();
+            break;
         }
     }
-    
-    // Glowing runes on ground (path to obelisk)
-    const runeMat = new THREE.MeshBasicMaterial({
-        color: 0x00ffff,
-        transparent: true,
-        opacity: 0.3
-    });
-    
-    for (let z = 0; z > -12; z -= 3) {
-        const rune = new THREE.Mesh(new THREE.CircleGeometry(0.5, 6), runeMat);
-        rune.rotation.x = -Math.PI / 2;
-        rune.position.set(0, 0.02, z);
-        townScene.add(rune);
-    }
 }
 
-// ============================================
-// OBELISK (Dungeon Entrance)
-// ============================================
-
-function createObelisk() {
-    const group = new THREE.Group();
+function handleJoystickEnd(e) {
+    e.preventDefault();
     
-    // Base platform
-    const baseGeom = new THREE.CylinderGeometry(5, 6, 1, 8);
-    const baseMat = new THREE.MeshStandardMaterial({
-        color: 0x2a2a3e,
-        roughness: 0.7,
-        metalness: 0.3
-    });
-    const base = new THREE.Mesh(baseGeom, baseMat);
-    base.position.y = 0.5;
-    base.receiveShadow = true;
-    group.add(base);
-    
-    // Steps
-    for (let i = 0; i < 3; i++) {
-        const step = new THREE.Mesh(
-            new THREE.CylinderGeometry(5.5 + i * 0.5, 5.5 + i * 0.5, 0.3, 8),
-            baseMat
-        );
-        step.position.y = -0.15 * i;
-        group.add(step);
-    }
-    
-    // Main obelisk
-    const obeliskGeom = new THREE.CylinderGeometry(1.5, 2, 15, 6);
-    const obeliskMat = new THREE.MeshStandardMaterial({
-        color: 0x1a1a2e,
-        roughness: 0.4,
-        metalness: 0.6,
-        emissive: 0x001122,
-        emissiveIntensity: 0.3
-    });
-    const obelisk = new THREE.Mesh(obeliskGeom, obeliskMat);
-    obelisk.position.y = 8.5;
-    obelisk.castShadow = true;
-    group.add(obelisk);
-    
-    // Glowing veins on obelisk
-    const veinMat = new THREE.MeshBasicMaterial({
-        color: 0x00ffff,
-        transparent: true,
-        opacity: 0.8
-    });
-    
-    for (let i = 0; i < 6; i++) {
-        const angle = (i / 6) * Math.PI * 2;
-        const vein = new THREE.Mesh(
-            new THREE.BoxGeometry(0.1, 12, 0.1),
-            veinMat
-        );
-        vein.position.set(
-            Math.cos(angle) * 1.6,
-            8,
-            Math.sin(angle) * 1.6
-        );
-        group.add(vein);
-    }
-    
-    // Top crystal
-    const crystalGeom = new THREE.OctahedronGeometry(1, 0);
-    const crystalMat = new THREE.MeshBasicMaterial({
-        color: 0x00ffff,
-        transparent: true,
-        opacity: 0.9
-    });
-    const crystal = new THREE.Mesh(crystalGeom, crystalMat);
-    crystal.position.y = 17;
-    crystal.rotation.y = Math.PI / 6;
-    group.add(crystal);
-    
-    // Crystal glow
-    const glowGeom = new THREE.SphereGeometry(2, 16, 16);
-    const glowMat = new THREE.MeshBasicMaterial({
-        color: 0x00ffff,
-        transparent: true,
-        opacity: 0.2
-    });
-    const glow = new THREE.Mesh(glowGeom, glowMat);
-    glow.position.y = 17;
-    group.add(glow);
-    
-    // Portal entrance
-    const portalGeom = new THREE.RingGeometry(1.5, 2, 32);
-    const portalMat = new THREE.MeshBasicMaterial({
-        color: 0x00ffff,
-        transparent: true,
-        opacity: 0.6,
-        side: THREE.DoubleSide
-    });
-    const portal = new THREE.Mesh(portalGeom, portalMat);
-    portal.position.set(0, 2, 3);
-    group.add(portal);
-    
-    // Portal inner (dark)
-    const portalInner = new THREE.Mesh(
-        new THREE.CircleGeometry(1.5, 32),
-        new THREE.MeshBasicMaterial({ color: 0x000011 })
-    );
-    portalInner.position.set(0, 2, 2.99);
-    group.add(portalInner);
-    
-    group.position.set(0, 0, -15);
-    group.userData = { type: 'obelisk', interactable: true };
-    townScene.add(group);
-}
-
-// ============================================
-// BUILDINGS
-// ============================================
-
-function createBuildings() {
-    // Scholar's Tower (left)
-    createBuilding(-12, -5, 'scholar', 0x2a3a4a, "Scholar's Tower");
-    
-    // Apprentice's Study (left back)
-    createBuilding(-15, -12, 'apprentice', 0x3a3a5a, "Apprentice's Study");
-    
-    // Merchant's Tent (right)
-    createBuilding(12, -5, 'merchant', 0x4a3a3a, "Merchant's Stall");
-    
-    // Wanderer's Corner (right back)
-    createBuilding(15, -12, 'wanderer', 0x3a4a3a, "Wanderer's Rest");
-    
-    // Keeper's Archive (back center-right)
-    createBuilding(5, -20, 'keeper', 0x3a3a4a, "Keeper's Archive");
-}
-
-function createBuilding(x, z, npcType, color, name) {
-    const group = new THREE.Group();
-    
-    // Main structure
-    const buildingGeom = new THREE.BoxGeometry(6, 5, 6);
-    const buildingMat = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.8,
-        metalness: 0.2
-    });
-    const building = new THREE.Mesh(buildingGeom, buildingMat);
-    building.position.y = 2.5;
-    building.castShadow = true;
-    building.receiveShadow = true;
-    group.add(building);
-    
-    // Roof
-    const roofGeom = new THREE.ConeGeometry(4.5, 2.5, 4);
-    const roofMat = new THREE.MeshStandardMaterial({
-        color: 0x2a2a3a,
-        roughness: 0.9
-    });
-    const roof = new THREE.Mesh(roofGeom, roofMat);
-    roof.position.y = 6.25;
-    roof.rotation.y = Math.PI / 4;
-    roof.castShadow = true;
-    group.add(roof);
-    
-    // Door
-    const doorGeom = new THREE.BoxGeometry(1.5, 2.5, 0.2);
-    const doorMat = new THREE.MeshStandardMaterial({
-        color: 0x4a3020,
-        roughness: 0.9
-    });
-    const door = new THREE.Mesh(doorGeom, doorMat);
-    door.position.set(0, 1.25, 3);
-    group.add(door);
-    
-    // Window glow
-    const windowGeom = new THREE.PlaneGeometry(1, 1);
-    const windowMat = new THREE.MeshBasicMaterial({
-        color: 0xffaa44,
-        transparent: true,
-        opacity: 0.6
-    });
-    const window1 = new THREE.Mesh(windowGeom, windowMat);
-    window1.position.set(-1.5, 3.5, 3.01);
-    group.add(window1);
-    const window2 = new THREE.Mesh(windowGeom, windowMat);
-    window2.position.set(1.5, 3.5, 3.01);
-    group.add(window2);
-    
-    // Building light
-    const light = new THREE.PointLight(0xffaa44, 0.5, 8);
-    light.position.set(0, 3, 4);
-    group.add(light);
-    
-    group.position.set(x, 0, z);
-    group.userData = { type: 'building', npcType, name };
-    townScene.add(group);
-}
-
-// ============================================
-// NPCs
-// ============================================
-
-function createNPCs() {
-    // Scholar - ability teacher
-    createNPC('scholar', -12, -2, {
-        robeColor: 0x1a237e,
-        accentColor: 0x00ffff,
-        name: 'The Scholar',
-        dialogue: 'The obelisk holds many secrets. I can teach you to harness its power.'
-    });
-    
-    // Apprentice - upgrade vendor
-    createNPC('apprentice', -15, -9, {
-        robeColor: 0x4a148c,
-        accentColor: 0xbf00ff,
-        name: "Scholar's Apprentice",
-        dialogue: 'My master taught me to enhance the connection between mage and obelisk.'
-    });
-    
-    // Merchant - health potions
-    createNPC('merchant', 12, -2, {
-        robeColor: 0x5d4037,
-        accentColor: 0xffcc00,
-        name: 'The Merchant',
-        dialogue: 'Supplies for the depths. Reasonable prices.'
-    });
-    
-    // Wanderer - hints and lore
-    createNPC('wanderer', 15, -9, {
-        robeColor: 0x37474f,
-        accentColor: 0x88cc88,
-        name: 'The Wanderer',
-        dialogue: 'I have traveled the lower floors. Listen well, if you wish to survive.'
-    });
-    
-    // Keeper - save/load
-    createNPC('keeper', 5, -17, {
-        robeColor: 0x263238,
-        accentColor: 0x90a4ae,
-        name: 'The Keeper',
-        dialogue: 'I maintain the records. Your progress is etched in the obelisk itself.'
-    });
-}
-
-function createNPC(type, x, z, config) {
-    const group = new THREE.Group();
-    
-    // Body
-    const bodyGeom = new THREE.CylinderGeometry(0.3, 0.4, 1.2, 8);
-    const bodyMat = new THREE.MeshStandardMaterial({
-        color: config.robeColor,
-        roughness: 0.8
-    });
-    const body = new THREE.Mesh(bodyGeom, bodyMat);
-    body.position.y = 0.8;
-    body.castShadow = true;
-    group.add(body);
-    
-    // Robe bottom
-    const robeGeom = new THREE.ConeGeometry(0.5, 0.8, 8);
-    const robe = new THREE.Mesh(robeGeom, bodyMat);
-    robe.position.y = 0.4;
-    robe.rotation.x = Math.PI;
-    group.add(robe);
-    
-    // Head
-    const headGeom = new THREE.SphereGeometry(0.25, 12, 12);
-    const headMat = new THREE.MeshStandardMaterial({ color: 0x8a7766 });
-    const head = new THREE.Mesh(headGeom, headMat);
-    head.position.y = 1.55;
-    group.add(head);
-    
-    // Hood
-    const hoodGeom = new THREE.SphereGeometry(0.35, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-    const hood = new THREE.Mesh(hoodGeom, bodyMat);
-    hood.position.y = 1.6;
-    hood.rotation.x = 0.3;
-    group.add(hood);
-    
-    // Glowing accent (belt/sash)
-    const accentGeom = new THREE.TorusGeometry(0.35, 0.03, 8, 16);
-    const accentMat = new THREE.MeshBasicMaterial({
-        color: config.accentColor,
-        transparent: true,
-        opacity: 0.8
-    });
-    const accent = new THREE.Mesh(accentGeom, accentMat);
-    accent.rotation.x = Math.PI / 2;
-    accent.position.y = 0.9;
-    group.add(accent);
-    
-    // NPC light
-    const light = new THREE.PointLight(config.accentColor, 0.3, 4);
-    light.position.y = 1;
-    group.add(light);
-    
-    // Interaction indicator (floating symbol)
-    const indicatorGeom = new THREE.OctahedronGeometry(0.15, 0);
-    const indicatorMat = new THREE.MeshBasicMaterial({
-        color: config.accentColor,
-        transparent: true,
-        opacity: 0.8
-    });
-    const indicator = new THREE.Mesh(indicatorGeom, indicatorMat);
-    indicator.position.y = 2.2;
-    indicator.name = 'indicator';
-    group.add(indicator);
-    
-    group.position.set(x, 0, z);
-    group.userData = {
-        type: 'npc',
-        npcType: type,
-        name: config.name,
-        dialogue: config.dialogue,
-        interactable: true
-    };
-    
-    townScene.add(group);
-    npcs.push(group);
-}
-
-// ============================================
-// DECORATIONS
-// ============================================
-
-function createDecorations() {
-    // Lamp posts
-    const lampPositions = [
-        [-8, 5], [8, 5],
-        [-8, -5], [8, -5],
-        [-5, -15], [10, -15]
-    ];
-    
-    lampPositions.forEach(([x, z]) => {
-        createLampPost(x, z);
-    });
-    
-    // Benches
-    createBench(-6, 2, 0);
-    createBench(6, 2, 0);
-    
-    // Barrels and crates near merchant
-    createBarrel(14, -3);
-    createBarrel(14.5, -4);
-    createCrate(13, -4);
-    
-    // Trees/plants around edges
-    createTree(-20, 5);
-    createTree(20, 5);
-    createTree(-20, -10);
-    createTree(20, -10);
-    
-    // Floating particles
-    createAmbientParticles();
-}
-
-function createLampPost(x, z) {
-    const group = new THREE.Group();
-    
-    // Post
-    const postGeom = new THREE.CylinderGeometry(0.1, 0.15, 4, 8);
-    const postMat = new THREE.MeshStandardMaterial({
-        color: 0x3a3a4a,
-        metalness: 0.7
-    });
-    const post = new THREE.Mesh(postGeom, postMat);
-    post.position.y = 2;
-    post.castShadow = true;
-    group.add(post);
-    
-    // Lamp housing
-    const housingGeom = new THREE.BoxGeometry(0.5, 0.6, 0.5);
-    const housingMat = new THREE.MeshStandardMaterial({
-        color: 0x3a3a4a,
-        metalness: 0.7,
-        emissive: 0xffaa44,
-        emissiveIntensity: 0.4
-    });
-    const housing = new THREE.Mesh(housingGeom, housingMat);
-    housing.position.y = 4.3;
-    group.add(housing);
-    
-    // Glow (hangs just BELOW the housing so it isn't sealed inside it)
-    const glowGeom = new THREE.SphereGeometry(0.22, 12, 12);
-    const glowMat = new THREE.MeshBasicMaterial({
-        color: 0xffcc66,
-        transparent: true,
-        opacity: 0.95
-    });
-    const glow = new THREE.Mesh(glowGeom, glowMat);
-    glow.position.y = 3.85;
-    group.add(glow);
-    
-    // Light (placed below the housing so it actually casts light on the plaza)
-    const light = new THREE.PointLight(0xffaa44, 2.2, 16, 1.5);
-    light.position.y = 3.8;
-    light.castShadow = true;
-    group.add(light);
-    
-    group.position.set(x, 0, z);
-    townScene.add(group);
-}
-
-function createBench(x, z, rotation) {
-    const group = new THREE.Group();
-    
-    const woodMat = new THREE.MeshStandardMaterial({
-        color: 0x5d4037,
-        roughness: 0.9
-    });
-    
-    // Seat
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(2, 0.1, 0.6), woodMat);
-    seat.position.y = 0.5;
-    group.add(seat);
-    
-    // Back
-    const back = new THREE.Mesh(new THREE.BoxGeometry(2, 0.6, 0.1), woodMat);
-    back.position.set(0, 0.8, -0.25);
-    group.add(back);
-    
-    // Legs
-    const legGeom = new THREE.BoxGeometry(0.1, 0.5, 0.1);
-    [[-0.8, 0.25, 0.2], [0.8, 0.25, 0.2], [-0.8, 0.25, -0.2], [0.8, 0.25, -0.2]].forEach(pos => {
-        const leg = new THREE.Mesh(legGeom, woodMat);
-        leg.position.set(...pos);
-        group.add(leg);
-    });
-    
-    group.position.set(x, 0, z);
-    group.rotation.y = rotation;
-    townScene.add(group);
-}
-
-function createBarrel(x, z) {
-    const barrel = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.4, 0.35, 0.8, 12),
-        new THREE.MeshStandardMaterial({ color: 0x5d4037, roughness: 0.9 })
-    );
-    barrel.position.set(x, 0.4, z);
-    barrel.castShadow = true;
-    townScene.add(barrel);
-}
-
-function createCrate(x, z) {
-    const crate = new THREE.Mesh(
-        new THREE.BoxGeometry(0.7, 0.7, 0.7),
-        new THREE.MeshStandardMaterial({ color: 0x6d5037, roughness: 0.9 })
-    );
-    crate.position.set(x, 0.35, z);
-    crate.rotation.y = Math.random();
-    crate.castShadow = true;
-    townScene.add(crate);
-}
-
-function createTree(x, z) {
-    const group = new THREE.Group();
-    
-    // Trunk
-    const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.3, 0.4, 3, 8),
-        new THREE.MeshStandardMaterial({ color: 0x4a3020, roughness: 0.9 })
-    );
-    trunk.position.y = 1.5;
-    trunk.castShadow = true;
-    group.add(trunk);
-    
-    // Foliage (mystical purple-blue)
-    const foliageGeom = new THREE.SphereGeometry(2, 8, 8);
-    const foliageMat = new THREE.MeshStandardMaterial({
-        color: 0x2a3a4a,
-        roughness: 0.8,
-        emissive: 0x112233,
-        emissiveIntensity: 0.2
-    });
-    const foliage = new THREE.Mesh(foliageGeom, foliageMat);
-    foliage.position.y = 4;
-    foliage.castShadow = true;
-    group.add(foliage);
-    
-    group.position.set(x, 0, z);
-    townScene.add(group);
-}
-
-function createAmbientParticles() {
-    const particleCount = 50;
-    const positions = new Float32Array(particleCount * 3);
-    
-    for (let i = 0; i < particleCount; i++) {
-        positions[i * 3] = (Math.random() - 0.5) * 40;
-        positions[i * 3 + 1] = Math.random() * 10;
-        positions[i * 3 + 2] = (Math.random() - 0.5) * 40;
-    }
-    
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    
-    const material = new THREE.PointsMaterial({
-        color: 0x88ccff,
-        size: 0.1,
-        transparent: true,
-        opacity: 0.6
-    });
-    
-    const particles = new THREE.Points(geometry, material);
-    particles.name = 'ambientParticles';
-    townScene.add(particles);
-}
-
-// ============================================
-// NPC INTERACTION
-// ============================================
-
-export function checkNPCInteraction(playerPosition) {
-    interactableNPC = null;
-    
-    for (const npc of npcs) {
-        const dist = playerPosition.distanceTo(npc.position);
-        
-        // Update indicator visibility
-        const indicator = npc.getObjectByName('indicator');
-        if (indicator) {
-            indicator.visible = dist < 4;
-            indicator.rotation.y += 0.02;
-            indicator.position.y = 2.2 + Math.sin(Date.now() * 0.003) * 0.1;
-        }
-        
-        if (dist < 2.5) {
-            interactableNPC = npc;
+    for (const touch of e.changedTouches) {
+        if (touch.identifier === touches.joystick) {
+            resetJoystick();
+            break;
         }
     }
+}
+
+function resetJoystick() {
+    touches.joystick = null;
+    joystick.active = false;
+    inputState.moveX = 0;
+    inputState.moveZ = 0;
     
-    // Also check obelisk interaction
-    const obeliskDist = Math.sqrt(
-        Math.pow(playerPosition.x, 2) +
-        Math.pow(playerPosition.z + 12, 2)
-    );
+    if (joystick.knob) {
+        joystick.knob.style.transform = 'translate(-50%, -50%)';
+    }
+}
+
+function updateJoystickVisual() {
+    if (!joystick.knob) return;
     
-    // Update interact button visibility
+    const dx = joystick.currentX - joystick.startX;
+    const dy = joystick.currentY - joystick.startY;
+    const maxDist = 40;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    
+    let clampedX = dx;
+    let clampedY = dy;
+    
+    if (dist > maxDist) {
+        clampedX = (dx / dist) * maxDist;
+        clampedY = (dy / dist) * maxDist;
+    }
+    
+    joystick.knob.style.transform = `translate(calc(-50% + ${clampedX}px), calc(-50% + ${clampedY}px))`;
+}
+
+// ============================================
+// BUTTONS (Right side)
+// ============================================
+
+function setupButtons() {
+    // Camera mode toggle (dungeon)
+    const camToggle = document.getElementById('btn-camera-toggle');
+    if (camToggle) {
+        camToggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            toggleDungeonCamera();
+        });
+    }
+    
+    // Jump button
+    const jumpBtn = document.getElementById('btn-jump');
+    if (jumpBtn) {
+        jumpBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            inputState.jump = true;
+        }, { passive: false });
+        jumpBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            inputState.jump = false;
+        }, { passive: false });
+    }
+    
+    // Attack button
+    const attackBtn = document.getElementById('btn-attack');
+    if (attackBtn) {
+        attackBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            inputState.attack = true;
+        }, { passive: false });
+        attackBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            inputState.attack = false;
+        }, { passive: false });
+    }
+    
+    // Ability buttons
+    ['spread', 'burst', 'mega'].forEach((ability, index) => {
+        const btn = document.getElementById(`btn-${ability}`);
+        if (btn) {
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                inputState[`ability${index + 1}`] = true;
+            }, { passive: false });
+            btn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                inputState[`ability${index + 1}`] = false;
+            }, { passive: false });
+        }
+    });
+    
+    // Town interact button
     const interactBtn = document.getElementById('btn-interact');
-    const enterBtn = document.getElementById('btn-enter-dungeon');
+    if (interactBtn) {
+        interactBtn.addEventListener('click', () => {
+            triggerNPCInteraction();
+        });
+    }
     
-    if (interactBtn && enterBtn) {
-        if (interactableNPC) {
-            interactBtn.classList.remove('hidden');
-            interactBtn.textContent = `Talk to ${interactableNPC.userData.name}`;
-            enterBtn.classList.add('hidden');
-        } else if (obeliskDist < 5) {
-            interactBtn.classList.add('hidden');
-            enterBtn.classList.remove('hidden');
-        } else {
-            interactBtn.classList.add('hidden');
-            enterBtn.classList.add('hidden');
+    // Enter dungeon button
+    const enterBtn = document.getElementById('btn-enter-dungeon');
+    if (enterBtn) {
+        enterBtn.addEventListener('click', () => {
+            window.gameAPI.showFloorSelect();
+        });
+    }
+    
+    // Dialogue close
+    const dialogueClose = document.getElementById('dialogue-close');
+    if (dialogueClose) {
+        dialogueClose.addEventListener('click', () => {
+            window.gameAPI.closeDialogue();
+        });
+    }
+}
+
+// ============================================
+// CAMERA CONTROLS (Swipe on right side)
+// ============================================
+
+function setupCameraControls() {
+    const cameraZone = document.getElementById('camera-zone');
+    if (!cameraZone) return;
+    
+    cameraZone.addEventListener('touchstart', handleCameraStart, { passive: false });
+    cameraZone.addEventListener('touchmove', handleCameraMove, { passive: false });
+    cameraZone.addEventListener('touchend', handleCameraEnd, { passive: false });
+    cameraZone.addEventListener('touchcancel', handleCameraEnd, { passive: false });
+}
+
+let lastCameraX = 0;
+let lastCameraY = 0;
+
+function handleCameraStart(e) {
+    e.preventDefault();
+    const touch = e.changedTouches[0];
+    touches.camera = touch.identifier;
+    lastCameraX = touch.clientX;
+    lastCameraY = touch.clientY;
+    
+    // Manual control - disable auto-follow temporarily
+    cameraSettings.manualControlTimer = 1.5;
+}
+
+function handleCameraMove(e) {
+    e.preventDefault();
+    
+    for (const touch of e.changedTouches) {
+        if (touch.identifier === touches.camera) {
+            const dx = touch.clientX - lastCameraX;
+            const dy = touch.clientY - lastCameraY;
+            
+            applyLook(dx, dy);
+            
+            lastCameraX = touch.clientX;
+            lastCameraY = touch.clientY;
+            break;
+        }
+    }
+}
+
+function handleCameraEnd(e) {
+    e.preventDefault();
+    
+    for (const touch of e.changedTouches) {
+        if (touch.identifier === touches.camera) {
+            touches.camera = null;
+            break;
+        }
+    }
+}
+
+// ============================================
+// KEYBOARD CONTROLS
+// ============================================
+
+function setupKeyboard() {
+    const keys = {};
+    
+    window.addEventListener('keydown', (e) => {
+        keys[e.code] = true;
+        updateKeyboardInput(keys);
+        
+        if (e.code === 'Space') {
+            inputState.jump = true;
+        }
+        if (e.code === 'KeyJ' || e.code === 'Enter') {
+            inputState.attack = true;
+        }
+        if (e.code === 'Digit1') inputState.ability1 = true;
+        if (e.code === 'Digit2') inputState.ability2 = true;
+        if (e.code === 'Digit3') inputState.ability3 = true;
+        if (e.code === 'KeyE') triggerNPCInteraction();
+        if (e.code === 'KeyV') toggleDungeonCamera();
+    });
+    
+    window.addEventListener('keyup', (e) => {
+        keys[e.code] = false;
+        updateKeyboardInput(keys);
+        
+        if (e.code === 'Space') inputState.jump = false;
+        if (e.code === 'KeyJ' || e.code === 'Enter') inputState.attack = false;
+        if (e.code === 'Digit1') inputState.ability1 = false;
+        if (e.code === 'Digit2') inputState.ability2 = false;
+        if (e.code === 'Digit3') inputState.ability3 = false;
+    });
+    
+    // Mouse for camera on desktop
+    let mouseDown = false;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+    
+    canvas.addEventListener('mousedown', (e) => {
+        mouseDown = true;
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+        cameraSettings.manualControlTimer = 1.5;
+    });
+    
+    window.addEventListener('mouseup', () => {
+        mouseDown = false;
+    });
+    
+    window.addEventListener('mousemove', (e) => {
+        if (mouseDown) {
+            const dx = e.clientX - lastMouseX;
+            const dy = e.clientY - lastMouseY;
+            // mouse is less sensitive than touch in follow mode; applyLook handles both
+            applyLook(cameraMode === 'follow' ? dx * 0.5 : dx, cameraMode === 'follow' ? dy * 0.5 : dy);
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        }
+    });
+}
+
+function updateKeyboardInput(keys) {
+    inputState.moveX = 0;
+    inputState.moveZ = 0;
+    
+    if (keys['KeyW'] || keys['ArrowUp']) inputState.moveZ = -1;
+    if (keys['KeyS'] || keys['ArrowDown']) inputState.moveZ = 1;
+    if (keys['KeyA'] || keys['ArrowLeft']) inputState.moveX = -1;
+    if (keys['KeyD'] || keys['ArrowRight']) inputState.moveX = 1;
+    
+    // Normalize diagonal
+    if (inputState.moveX !== 0 && inputState.moveZ !== 0) {
+        inputState.moveX *= 0.707;
+        inputState.moveZ *= 0.707;
+    }
+}
+
+// ============================================
+// GLOBAL TOUCH HANDLERS (Fix stuck joystick)
+// ============================================
+
+function setupGlobalTouchHandlers() {
+    document.addEventListener('touchend', handleGlobalTouchEnd, { passive: false });
+    document.addEventListener('touchcancel', handleGlobalTouchEnd, { passive: false });
+}
+
+function handleGlobalTouchEnd(e) {
+    // Check if joystick touch is still active
+    if (touches.joystick !== null) {
+        let joystickTouchStillActive = false;
+        for (const touch of e.touches) {
+            if (touch.identifier === touches.joystick) {
+                joystickTouchStillActive = true;
+                break;
+            }
+        }
+        if (!joystickTouchStillActive) {
+            resetJoystick();
         }
     }
     
-    return interactableNPC;
-}
-
-export function triggerNPCInteraction() {
-    if (interactableNPC && npcInteractionCallback) {
-        npcInteractionCallback(interactableNPC.userData.npcType);
+    // Check camera touch
+    if (touches.camera !== null) {
+        let cameraTouchStillActive = false;
+        for (const touch of e.touches) {
+            if (touch.identifier === touches.camera) {
+                cameraTouchStillActive = true;
+                break;
+            }
+        }
+        if (!cameraTouchStillActive) {
+            touches.camera = null;
+        }
     }
 }
 
-export function getInteractableNPC() {
-    return interactableNPC;
+// ============================================
+// CAMERA UPDATE
+// ============================================
+
+export function updateControls(delta, target, scene) {
+    if (!camera || !target) return;
+    
+    cameraTarget = target;
+    
+    if (cameraMode === 'fps') {
+        // First person: camera sits at the player's eye, body hidden
+        target.visible = false;
+        target.rotation.y = fps.yaw;            // body + attacks face the view
+        inputState.cameraRelative = true;
+        inputState.cameraYaw = fps.yaw;
+        inputState.cameraPitch = fps.pitch;
+        updateFPSCamera(target);
+    } else if (cameraMode === 'topdown') {
+        // Zoomed-out top-down debug view
+        target.visible = true;
+        inputState.cameraRelative = false;
+        updateTopDownCamera(target);
+    } else {
+        // Third-person follow (town)
+        target.visible = true;
+        inputState.cameraRelative = false;
+        updateFollowCamera(delta, target, scene);
+        // NPC proximity prompts only matter in the follow/town view
+        checkNPCInteraction(target.position);
+    }
 }
 
-export function showNPCDialogue(npc) {
-    // This would show floating dialogue above NPC
-    // Implementation depends on UI system
+function updateFPSCamera(target) {
+    const ex = target.position.x;
+    const ey = target.position.y + fps.eyeHeight;
+    const ez = target.position.z;
+    camera.position.set(ex, ey, ez);
+    
+    const cp = Math.cos(fps.pitch);
+    const fx = Math.sin(fps.yaw) * cp;
+    const fy = Math.sin(fps.pitch);
+    const fz = Math.cos(fps.yaw) * cp;
+    camera.lookAt(ex + fx, ey + fy, ez + fz);
+}
+
+function updateTopDownCamera(target) {
+    camera.position.set(target.position.x, target.position.y + topDown.height, target.position.z);
+    camera.lookAt(target.position.x, target.position.y, target.position.z);
+}
+
+function updateFollowCamera(delta, target, scene) {
+    // Manual control timer
+    if (cameraSettings.manualControlTimer > 0) {
+        cameraSettings.manualControlTimer -= delta;
+    }
+    
+    // Auto-follow when moving (if not manually controlling)
+    if (cameraSettings.autoFollowEnabled && cameraSettings.manualControlTimer <= 0) {
+        const isMoving = Math.abs(inputState.moveX) > 0.1 || Math.abs(inputState.moveZ) > 0.1;
+        
+        if (isMoving) {
+            const playerFacingAngle = Math.atan2(inputState.moveX, inputState.moveZ);
+            cameraSettings.targetAngle = playerFacingAngle + Math.PI;
+        }
+        
+        let angleDiff = cameraSettings.targetAngle - cameraSettings.angle;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        cameraSettings.angle += angleDiff * delta * cameraSettings.angleSmoothing;
+    }
+    
+    const desiredPos = new THREE.Vector3(
+        target.position.x + Math.sin(cameraSettings.angle) * cameraSettings.distance,
+        target.position.y + cameraSettings.height,
+        target.position.z + Math.cos(cameraSettings.angle) * cameraSettings.distance
+    );
+    
+    const finalPos = checkCameraCollision(target.position, desiredPos, scene);
+    camera.position.lerp(finalPos, cameraSettings.smoothing);
+    
+    const lookTarget = new THREE.Vector3(
+        target.position.x,
+        target.position.y + 1.2,
+        target.position.z
+    );
+    camera.lookAt(lookTarget);
+}
+
+function checkCameraCollision(playerPos, desiredCamPos, scene) {
+    if (!scene) return desiredCamPos;
+    
+    const rayOrigin = new THREE.Vector3(
+        playerPos.x,
+        playerPos.y + 1.5,
+        playerPos.z
+    );
+    
+    const direction = new THREE.Vector3().subVectors(desiredCamPos, rayOrigin);
+    const distance = direction.length();
+    direction.normalize();
+    
+    raycaster.set(rayOrigin, direction);
+    raycaster.far = distance;
+    
+    // Get collidable objects (walls, large objects)
+    const collidables = [];
+    scene.traverse(obj => {
+        if (!obj.isMesh) return;
+        if (obj.userData?.isPlatform || obj.userData?.isPortal) return;
+        
+        const bbox = new THREE.Box3().setFromObject(obj);
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+        
+        // Only check large objects
+        if (size.x > 1 || size.y > 1 || size.z > 1) {
+            collidables.push(obj);
+        }
+    });
+    
+    const intersects = raycaster.intersectObjects(collidables, false);
+    
+    if (intersects.length > 0) {
+        const hitDistance = intersects[0].distance;
+        const safeDistance = Math.max(hitDistance - 0.5, cameraSettings.minDistance);
+        
+        return new THREE.Vector3(
+            rayOrigin.x + direction.x * safeDistance,
+            rayOrigin.y + direction.y * safeDistance,
+            rayOrigin.z + direction.z * safeDistance
+        );
+    }
+    
+    return desiredCamPos;
+}
+
+// ============================================
+// EXPORTS
+// ============================================
+
+export function getInputState() {
+    return inputState;
+}
+
+export function resetInput() {
+    inputState.moveX = 0;
+    inputState.moveZ = 0;
+    inputState.jump = false;
+    inputState.attack = false;
+    inputState.ability1 = false;
+    inputState.ability2 = false;
+    inputState.ability3 = false;
+}
+
+export function setCameraTarget(target) {
+    cameraTarget = target;
 }
