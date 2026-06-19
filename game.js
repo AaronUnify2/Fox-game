@@ -134,10 +134,11 @@ function animate() {
         updateEntities(delta, gameData, inputState);
         
         if (gameState === 'town') {
-            // Keep the player inside the tree-walled plaza.
+            // Keep the player on the grassy plateau, with the south gate sealed.
             const p = getPlayer();
-            p.position.x = Math.max(-23, Math.min(23, p.position.x));
-            p.position.z = Math.max(-23, Math.min(23, p.position.z));
+            const r = Math.hypot(p.position.x, p.position.z);
+            if (r > 30) { p.position.x *= 30 / r; p.position.z *= 30 / r; }
+            if (p.position.z > 23) p.position.z = 23;
         }
         
         if (gameState === 'dungeon') {
@@ -192,17 +193,17 @@ export function enterTown() {
     document.getElementById('death-screen').classList.add('hidden');
     document.getElementById('victory-screen').classList.add('hidden');
     
-    // Position player
+    // Position player at the south gate, looking up into the outpost
     const player = getPlayer();
     if (player) {
-        player.position.set(0, 0, 5);
+        player.position.set(0, 0, 22);
         player.rotation.y = Math.PI;
         currentScene.add(player);
     }
     
     setCameraTarget(player);
     setCameraMode('fps');
-    setFPSLook(Math.PI); // first-person, facing the obelisk (-Z) on spawn
+    setFPSLook(Math.PI); // first-person, facing north into town (toward the peak/obelisk)
     
     // Restore health in town
     gameData.player.health = gameData.player.maxHealth;
