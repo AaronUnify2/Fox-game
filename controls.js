@@ -83,13 +83,14 @@ export function setCameraMode(mode) {
         else camera.up.set(0, 1, 0);
     }
 
-    // Follow mode (town): snap the camera directly behind the player's back so it
-    // doesn't have to swing 180 deg on the first step. The camera offset uses
-    // sin/cos(angle); "behind" the facing direction rotation.y is rotation.y + PI.
-    if (mode === 'follow') {
-        const tb = document.getElementById('btn-town-camera');
-        if (tb) tb.textContent = 'TOP-DOWN MAP';
-    }
+    // Keep both camera-toggle buttons labelled with the mode they switch TO.
+    const dBtn = document.getElementById('btn-camera-toggle');
+    if (dBtn) dBtn.textContent = (mode === 'topdown') ? 'FPS VIEW' : 'TOP-DOWN';
+    const tBtn = document.getElementById('btn-town-camera');
+    if (tBtn) tBtn.textContent = (mode === 'topdown') ? 'FPS VIEW' : 'TOP-DOWN MAP';
+
+    // (Legacy) Follow mode is no longer used — town now runs in FPS like the
+    // dungeon — but the snap is kept harmless in case follow is ever re-enabled.
     if (mode === 'follow' && camera && cameraTarget) {
         const behind = cameraTarget.rotation.y + Math.PI;
         cameraSettings.angle = behind;
@@ -116,17 +117,24 @@ export function toggleDungeonCamera() {
     if (btn) btn.textContent = (cameraMode === 'topdown') ? 'FPS VIEW' : 'TOP-DOWN';
 }
 
-// Toggle between behind-the-back follow and a fixed top-down overview (town only)
+// Toggle between first-person and a fixed top-down overview (town button).
 export function toggleTownCamera() {
-    if (cameraMode === 'fps') return; // no-op in the dungeon
     if (cameraMode === 'topdown') {
-        setCameraMode('follow'); // resets the button label + snaps behind the player
+        setCameraMode('fps'); // back to first person (clears the fixed overview)
     } else {
         setCameraMode('topdown');
         topDownCenter = { x: 0, z: -6, h: 50 }; // fixed overhead framing the whole town
-        const btn = document.getElementById('btn-town-camera');
-        if (btn) btn.textContent = 'FOLLOW VIEW';
     }
+    // Button labels are handled in setCameraMode.
+}
+
+// Point the first-person view at a given yaw (and optional pitch). Called on
+// scene entry so the player spawns facing something sensible.
+export function setFPSLook(yaw, pitch = -0.05) {
+    fps.yaw = yaw;
+    fps.pitch = pitch;
+    inputState.cameraYaw = yaw;
+    inputState.cameraPitch = pitch;
 }
 
 // Apply look input (swipe/mouse drag) according to the active camera mode
