@@ -25,15 +25,17 @@ const OBELISK_POS = { x: 17, z: -18 };
 
 export async function initTown() {
     townScene = new THREE.Scene();
-    townScene.background = new THREE.Color(0x1a1520);
-    townScene.fog = new THREE.FogExp2(0x1a1520, 0.015);
+    townScene.background = makeNightSkyGradient();
+    townScene.fog = new THREE.FogExp2(0x0a0e1f, 0.012);
     
     createLighting();
+    createNightSky();
     createGround();
     createObelisk();
     createBuildings();
     createNPCs();
     createDecorations();
+    createPerimeterTrees();
     
     return Promise.resolve();
 }
@@ -44,6 +46,74 @@ export function getTownScene() {
 
 export function disposeTown() {
     // Cleanup if needed
+}
+
+// ============================================
+// NIGHT SKY
+// ============================================
+
+function makeNightSkyGradient() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 4;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0.0, '#05060f');  // zenith
+    g.addColorStop(0.55, '#0a1024');
+    g.addColorStop(1.0, '#1a2342');  // horizon glow
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 4, 256);
+    return new THREE.CanvasTexture(canvas);
+}
+
+function createNightSky() {
+    // Star field on a large dome (ignores fog so it stays crisp)
+    const count = 500;
+    const pos = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(Math.random());       // upper hemisphere
+        const r = 90;
+        pos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+        pos[i * 3 + 1] = r * Math.cos(phi) + 6;     // lift above the horizon
+        pos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({
+        color: 0xbcd0ff, size: 0.7, sizeAttenuation: true,
+        transparent: true, opacity: 0.9, fog: false
+    });
+    townScene.add(new THREE.Points(geo, mat));
+    
+    // Moon (toward the moonlight source) with a soft halo
+    const moonPos = new THREE.Vector3(-45, 48, 28);
+    const moon = new THREE.Mesh(
+        new THREE.SphereGeometry(4.5, 24, 24),
+        new THREE.MeshBasicMaterial({ color: 0xe6ecff, fog: false })
+    );
+    moon.position.copy(moonPos);
+    townScene.add(moon);
+    const halo = new THREE.Mesh(
+        new THREE.SphereGeometry(7, 24, 24),
+        new THREE.MeshBasicMaterial({ color: 0x9fb4e8, transparent: true, opacity: 0.22, fog: false })
+    );
+    halo.position.copy(moonPos);
+    townScene.add(halo);
+}
+
+function createPerimeterTrees() {
+    // A ring of trees walls the town in so the player can't wander into the void.
+    const edge = 24, step = 4;
+    const nearOb = (x, z) => Math.hypot(x - OBELISK_POS.x, z - OBELISK_POS.z) < 8;
+    for (let x = -edge; x <= edge; x += step) {
+        if (!nearOb(x, -edge)) createTree(x, -edge, false);  // north row
+        if (!nearOb(x,  edge)) createTree(x,  edge, false);  // south row
+    }
+    for (let z = -edge + step; z <= edge - step; z += step) {
+        if (!nearOb(-edge, z)) createTree(-edge, z, false);  // west column
+        if (!nearOb( edge, z)) createTree( edge, z, false);  // east column
+    }
 }
 
 // ============================================
@@ -362,10 +432,11 @@ function createNPCs() {
     ];
 
     for (const n of roster) {
-        // step out of the doorway (local +Z) in the facing direction
+        // step out of the doorway (door is local +Z of the building) onto the street
         const nx = n.bx + Math.sin(n.rot) * 3.5;
         const nz = n.bz + Math.cos(n.rot) * 3.5;
-        createNPC(n.type, nx, nz, n.rot, {
+        // NPC model's face is on its local -Z, so add PI to look out toward the street.
+        createNPC(n.type, nx, nz, n.rot + Math.PI, {
             robeColor: n.robeColor, accentColor: n.accentColor, name: n.name, dialogue: n.dialogue
         });
     }
@@ -583,7 +654,7 @@ function createCrate(x, z) {
     townScene.add(crate);
 }
 
-function createTree(x, z) {
+function createTree(x, z, castShadow = true) {
     const group = new THREE.Group();
     
     // Trunk
@@ -592,7 +663,7 @@ function createTree(x, z) {
         new THREE.MeshStandardMaterial({ color: 0x4a3020, roughness: 0.9 })
     );
     trunk.position.y = 1.5;
-    trunk.castShadow = true;
+    trunk.castShadow = castShadow;
     group.add(trunk);
     
     // Foliage (mystical purple-blue)
@@ -605,7 +676,7 @@ function createTree(x, z) {
     });
     const foliage = new THREE.Mesh(foliageGeom, foliageMat);
     foliage.position.y = 4;
-    foliage.castShadow = true;
+    foliage.castShadow = castShadow;
     group.add(foliage);
     
     group.position.set(x, 0, z);
