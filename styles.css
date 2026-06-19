@@ -168,7 +168,7 @@ canvas {
     text-shadow: 0 0 10px #ffcc00;
 }
 
-#btn-camera-toggle {
+#btn-camera-toggle, #btn-town-camera {
     background: rgba(0,0,0,0.55);
     border: 2px solid #00ffff;
     color: #00ffff;
@@ -181,8 +181,17 @@ canvas {
     pointer-events: auto;
 }
 
-#btn-camera-toggle:active {
+#btn-camera-toggle:active, #btn-town-camera:active {
     background: rgba(0,255,255,0.25);
+}
+
+/* Town map button sits top-center, clear of the corner HUD text */
+#btn-town-camera {
+    position: absolute;
+    top: 0.6rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 12;
 }
 
 /* ============================================
