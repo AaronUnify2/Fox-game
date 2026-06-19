@@ -66,9 +66,11 @@ const raycaster = new THREE.Raycaster();
 let cameraMode = 'follow';
 const fps = { yaw: 0, pitch: -0.05, eyeHeight: 1.6, sens: 0.005 };
 const topDown = { height: 55 };
+let topDownCenter = null; // when set ({x,z,h}), top-down uses a fixed overview instead of following the player (town map)
 
 export function setCameraMode(mode) {
     cameraMode = mode;
+    if (mode !== 'topdown') topDownCenter = null; // keep the fixed town overview only while in top-down
     inputState.cameraRelative = (mode === 'fps');
     inputState.cameraYaw = fps.yaw;
     inputState.cameraPitch = fps.pitch;
@@ -84,6 +86,10 @@ export function setCameraMode(mode) {
     // Follow mode (town): snap the camera directly behind the player's back so it
     // doesn't have to swing 180 deg on the first step. The camera offset uses
     // sin/cos(angle); "behind" the facing direction rotation.y is rotation.y + PI.
+    if (mode === 'follow') {
+        const tb = document.getElementById('btn-town-camera');
+        if (tb) tb.textContent = 'TOP-DOWN MAP';
+    }
     if (mode === 'follow' && camera && cameraTarget) {
         const behind = cameraTarget.rotation.y + Math.PI;
         cameraSettings.angle = behind;
@@ -108,6 +114,19 @@ export function toggleDungeonCamera() {
     setCameraMode(cameraMode === 'topdown' ? 'fps' : 'topdown');
     const btn = document.getElementById('btn-camera-toggle');
     if (btn) btn.textContent = (cameraMode === 'topdown') ? 'FPS VIEW' : 'TOP-DOWN';
+}
+
+// Toggle between behind-the-back follow and a fixed top-down overview (town only)
+export function toggleTownCamera() {
+    if (cameraMode === 'fps') return; // no-op in the dungeon
+    if (cameraMode === 'topdown') {
+        setCameraMode('follow'); // resets the button label + snaps behind the player
+    } else {
+        setCameraMode('topdown');
+        topDownCenter = { x: 0, z: -6, h: 50 }; // fixed overhead framing the whole town
+        const btn = document.getElementById('btn-town-camera');
+        if (btn) btn.textContent = 'FOLLOW VIEW';
+    }
 }
 
 // Apply look input (swipe/mouse drag) according to the active camera mode
@@ -252,6 +271,15 @@ function setupButtons() {
         camToggle.addEventListener('click', (e) => {
             e.preventDefault();
             toggleDungeonCamera();
+        });
+    }
+
+    // Camera mode toggle (town top-down map)
+    const townCamToggle = document.getElementById('btn-town-camera');
+    if (townCamToggle) {
+        townCamToggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            toggleTownCamera();
         });
     }
     
@@ -541,8 +569,12 @@ function updateFPSCamera(target) {
 }
 
 function updateTopDownCamera(target) {
-    camera.position.set(target.position.x, target.position.y + topDown.height, target.position.z);
-    camera.lookAt(target.position.x, target.position.y, target.position.z);
+    // Town map uses a fixed overview (topDownCenter); the dungeon follows the player.
+    const cx = topDownCenter ? topDownCenter.x : target.position.x;
+    const cz = topDownCenter ? topDownCenter.z : target.position.z;
+    const cy = topDownCenter ? topDownCenter.h : target.position.y + topDown.height;
+    camera.position.set(cx, cy, cz);
+    camera.lookAt(cx, 0, cz);
 }
 
 function updateFollowCamera(delta, target, scene) {
