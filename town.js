@@ -16,6 +16,9 @@ let townScene;
 let npcs = [];
 let interactableNPC = null;
 
+// Obelisk (dungeon entrance) — placed in the NE corner so the town has room.
+const OBELISK_POS = { x: 17, z: -18 };
+
 // ============================================
 // INITIALIZATION
 // ============================================
@@ -72,7 +75,7 @@ function createLighting() {
     
     // Obelisk glow
     const obeliskLight = new THREE.PointLight(0x00ffff, 2, 30);
-    obeliskLight.position.set(0, 10, -15);
+    obeliskLight.position.set(OBELISK_POS.x, 10, OBELISK_POS.z);
     townScene.add(obeliskLight);
 }
 
@@ -110,19 +113,35 @@ function createGround() {
         }
     }
     
-    // Glowing runes on ground (path to obelisk)
+    // Stone pathways: main street, cross street, and a spur to the obelisk.
+    createRoad(0, -3, 7, 28);    // main street (N-S)
+    createRoad(0, -6, 24, 5);    // cross street (E-W)
+    createRoad(10, -17, 16, 4);  // spur to the obelisk in the NE corner
+    
+    // Glowing runes leading along the spur to the obelisk
     const runeMat = new THREE.MeshBasicMaterial({
         color: 0x00ffff,
         transparent: true,
-        opacity: 0.3
+        opacity: 0.35
     });
-    
-    for (let z = 0; z > -12; z -= 3) {
-        const rune = new THREE.Mesh(new THREE.CircleGeometry(0.5, 6), runeMat);
+    for (let i = 0; i < 6; i++) {
+        const t = i / 5;
+        const rune = new THREE.Mesh(new THREE.CircleGeometry(0.45, 6), runeMat);
         rune.rotation.x = -Math.PI / 2;
-        rune.position.set(0, 0.02, z);
+        rune.position.set(3 + t * (OBELISK_POS.x - 3), 0.02, -17 + t * (OBELISK_POS.z + 17));
         townScene.add(rune);
     }
+}
+
+function createRoad(cx, cz, sizeX, sizeZ) {
+    const road = new THREE.Mesh(
+        new THREE.PlaneGeometry(sizeX, sizeZ),
+        new THREE.MeshStandardMaterial({ color: 0x4a4658, roughness: 0.95, metalness: 0.05 })
+    );
+    road.rotation.x = -Math.PI / 2;
+    road.position.set(cx, 0.015, cz);
+    road.receiveShadow = true;
+    townScene.add(road);
 }
 
 // ============================================
@@ -232,7 +251,7 @@ function createObelisk() {
     portalInner.position.set(0, 2, 2.99);
     group.add(portalInner);
     
-    group.position.set(0, 0, -15);
+    group.position.set(OBELISK_POS.x, 0, OBELISK_POS.z);
     group.userData = { type: 'obelisk', interactable: true };
     townScene.add(group);
 }
@@ -241,26 +260,22 @@ function createObelisk() {
 // BUILDINGS
 // ============================================
 
-// All buildings/NPCs face this plaza focal point (just south of the obelisk),
-// so their fronts open toward the player instead of all pointing the same way.
-const TOWN_FOCUS = { x: 0, z: -8 };
-
-function faceFocus(x, z) {
-    // rotation.y so the object's local +Z (its front) points at the focus
-    return Math.atan2(TOWN_FOCUS.x - x, TOWN_FOCUS.z - z);
-}
+// Building/NPC facings (rotation.y so local +Z — the front — points a way).
+const FACE_E = Math.PI / 2;   // door faces east  (+X)
+const FACE_W = -Math.PI / 2;  // door faces west  (-X)
+const FACE_S = 0;             // door faces south (+Z, toward the entrance)
 
 function createBuildings() {
-    // Ring the plaza; each building is rotated to face the centre.
+    // A main street (x=0) lined with shops; the Keeper caps the north end.
     const layout = [
-        { x: -16, z: -5,  type: 'scholar',    color: 0x2a3a4a, name: "Scholar's Tower" },
-        { x: -12, z: -18, type: 'apprentice', color: 0x3a3a5a, name: "Apprentice's Study" },
-        { x:  16, z: -4,  type: 'merchant',   color: 0x4a3a3a, name: "Merchant's Stall" },
-        { x:  12, z: -18, type: 'wanderer',   color: 0x3a4a3a, name: "Wanderer's Rest" },
-        { x:   0, z: -25, type: 'keeper',     color: 0x3a3a4a, name: "Keeper's Archive" }
+        { x: -8, z: 0,   rot: FACE_E, type: 'scholar',    color: 0x2a3a4a, name: "Scholar's Tower" },
+        { x: -8, z: -11, rot: FACE_E, type: 'apprentice', color: 0x3a3a5a, name: "Apprentice's Study" },
+        { x:  7, z: 0,   rot: FACE_W, type: 'merchant',   color: 0x4a3a3a, name: "Merchant's Stall" },
+        { x:  7, z: -11, rot: FACE_W, type: 'wanderer',   color: 0x3a4a3a, name: "Wanderer's Rest" },
+        { x:  0, z: -20, rot: FACE_S, type: 'keeper',     color: 0x3a3a4a, name: "Keeper's Archive" }
     ];
     for (const b of layout) {
-        createBuilding(b.x, b.z, faceFocus(b.x, b.z), b.type, b.color, b.name);
+        createBuilding(b.x, b.z, b.rot, b.type, b.color, b.name);
     }
 }
 
@@ -332,27 +347,25 @@ function createBuilding(x, z, rotationY, npcType, color, name) {
 // ============================================
 
 function createNPCs() {
-    // Each NPC stands just in front of their building (toward the plaza) and
-    // faces the centre, so the player meets them face-to-face on approach.
+    // Each NPC stands just outside their door, facing the street.
     const roster = [
-        { type: 'scholar',    bx: -16, bz: -5,  robeColor: 0x1a237e, accentColor: 0x00ffff, name: 'The Scholar',
+        { type: 'scholar',    bx: -8, bz: 0,   rot: FACE_E, robeColor: 0x1a237e, accentColor: 0x00ffff, name: 'The Scholar',
           dialogue: 'The obelisk holds many secrets. I can teach you to harness its power.' },
-        { type: 'apprentice', bx: -12, bz: -18, robeColor: 0x4a148c, accentColor: 0xbf00ff, name: "Scholar's Apprentice",
+        { type: 'apprentice', bx: -8, bz: -11, rot: FACE_E, robeColor: 0x4a148c, accentColor: 0xbf00ff, name: "Scholar's Apprentice",
           dialogue: 'My master taught me to enhance the connection between mage and obelisk.' },
-        { type: 'merchant',   bx: 16,  bz: -4,  robeColor: 0x5d4037, accentColor: 0xffcc00, name: 'The Merchant',
+        { type: 'merchant',   bx: 7,  bz: 0,   rot: FACE_W, robeColor: 0x5d4037, accentColor: 0xffcc00, name: 'The Merchant',
           dialogue: 'Supplies for the depths. Reasonable prices.' },
-        { type: 'wanderer',   bx: 12,  bz: -18, robeColor: 0x37474f, accentColor: 0x88cc88, name: 'The Wanderer',
+        { type: 'wanderer',   bx: 7,  bz: -11, rot: FACE_W, robeColor: 0x37474f, accentColor: 0x88cc88, name: 'The Wanderer',
           dialogue: 'I have traveled the lower floors. Listen well, if you wish to survive.' },
-        { type: 'keeper',     bx: 0,   bz: -25, robeColor: 0x263238, accentColor: 0x90a4ae, name: 'The Keeper',
+        { type: 'keeper',     bx: 0,  bz: -20, rot: FACE_S, robeColor: 0x263238, accentColor: 0x90a4ae, name: 'The Keeper',
           dialogue: 'I maintain the records. Your progress is etched in the obelisk itself.' }
     ];
 
     for (const n of roster) {
-        const dx = TOWN_FOCUS.x - n.bx, dz = TOWN_FOCUS.z - n.bz;
-        const len = Math.hypot(dx, dz) || 1;
-        const nx = n.bx + (dx / len) * 4.2; // step out in front of the door
-        const nz = n.bz + (dz / len) * 4.2;
-        createNPC(n.type, nx, nz, Math.atan2(dx, dz), {
+        // step out of the doorway (local +Z) in the facing direction
+        const nx = n.bx + Math.sin(n.rot) * 3.5;
+        const nz = n.bz + Math.cos(n.rot) * 3.5;
+        createNPC(n.type, nx, nz, n.rot, {
             robeColor: n.robeColor, accentColor: n.accentColor, name: n.name, dialogue: n.dialogue
         });
     }
@@ -441,30 +454,31 @@ function createNPC(type, x, z, rotationY, config) {
 // ============================================
 
 function createDecorations() {
-    // Lamp posts line the avenue from the entrance up to the obelisk
+    // Lamp posts lining the main street and the spur to the obelisk
     const lampPositions = [
-        [-5, 3], [5, 3],
-        [-5, -7], [5, -7],
-        [-6, -14], [6, -14]
+        [-4.5, 5], [4.5, 5],
+        [-4.5, -5], [4.5, -5],
+        [-4.5, -15], [4.5, -15],
+        [7, -16], [10.5, -16]
     ];
     lampPositions.forEach(([x, z]) => {
         createLampPost(x, z);
     });
     
-    // Benches flanking the plaza, turned toward the avenue
-    createBench(-8, 0, Math.PI / 2);
-    createBench(8, 0, -Math.PI / 2);
+    // Benches along the cross street
+    createBench(-6, -6, 0);
+    createBench(6, -6, 0);
     
-    // Barrels and crates beside the merchant (east side)
-    createBarrel(15, -8);
-    createBarrel(16, -9);
-    createCrate(14, -9);
+    // Barrels and crates beside the merchant
+    createBarrel(11, 2);
+    createBarrel(12, 1);
+    createCrate(11, 3);
     
-    // Trees framing the corners of the plaza
-    createTree(-22, 6);
-    createTree(22, 6);
-    createTree(-21, -23);
-    createTree(21, -23);
+    // Trees framing the plaza (NE corner left clear for the obelisk)
+    createTree(-22, 8);
+    createTree(22, 8);
+    createTree(-22, -22);
+    createTree(-14, 10);
     
     // Floating particles
     createAmbientParticles();
@@ -648,8 +662,8 @@ export function checkNPCInteraction(playerPosition) {
     
     // Also check obelisk interaction
     const obeliskDist = Math.sqrt(
-        Math.pow(playerPosition.x, 2) +
-        Math.pow(playerPosition.z + 12, 2)
+        Math.pow(playerPosition.x - OBELISK_POS.x, 2) +
+        Math.pow(playerPosition.z - OBELISK_POS.z, 2)
     );
     
     // Update interact button visibility
@@ -661,7 +675,7 @@ export function checkNPCInteraction(playerPosition) {
             interactBtn.classList.remove('hidden');
             interactBtn.textContent = `Talk to ${interactableNPC.userData.name}`;
             enterBtn.classList.add('hidden');
-        } else if (obeliskDist < 5) {
+        } else if (obeliskDist < 7) {
             interactBtn.classList.add('hidden');
             enterBtn.classList.remove('hidden');
         } else {
