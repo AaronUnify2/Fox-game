@@ -5,7 +5,7 @@
 // ============================================
 
 import * as THREE from 'three';
-import { checkNPCInteraction, triggerNPCInteraction } from './town.js';
+import { checkNPCInteraction, triggerNPCInteraction, getTownScene } from './town.js';
 
 let camera;
 let canvas;
@@ -548,11 +548,19 @@ export function updateControls(delta, target, scene) {
         inputState.cameraYaw = fps.yaw;
         inputState.cameraPitch = fps.pitch;
         updateFPSCamera(target);
+        // Town is now FPS too, so proximity prompts must run here as well.
+        if (scene === getTownScene()) {
+            checkNPCInteraction(target.position);
+        }
     } else if (cameraMode === 'topdown') {
         // Zoomed-out top-down debug view
         target.visible = true;
         inputState.cameraRelative = false;
         updateTopDownCamera(target);
+        // Keep prompts live if the player pans the town map and walks up to someone.
+        if (scene === getTownScene()) {
+            checkNPCInteraction(target.position);
+        }
     } else {
         // Third-person follow (town)
         target.visible = true;
