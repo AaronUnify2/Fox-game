@@ -484,7 +484,7 @@ function createHallway(x1, z1, x2, z2, theme) {
         new THREE.BoxGeometry(length, 0.3, 6),
         wallMat
     );
-    ceiling.position.set(centerX, 5, centerZ);
+    ceiling.position.set(centerX, 10, centerZ);
     ceiling.rotation.y = -angle;
     dungeonScene.add(ceiling);
     
@@ -495,8 +495,8 @@ function createHallway(x1, z1, x2, z2, theme) {
         const lx = x1 + (x2 - x1) * t;
         const lz = z1 + (z2 - z1) * t;
         
-        const light = new THREE.PointLight(theme.accentColor, 1.5, 8);
-        light.position.set(lx, 4, lz);
+        const light = new THREE.PointLight(theme.accentColor, 2.2, 16);
+        light.position.set(lx, 8, lz);
         dungeonScene.add(light);
         
         // Light fixture
@@ -508,7 +508,7 @@ function createHallway(x1, z1, x2, z2, theme) {
                 opacity: 0.8
             })
         );
-        fixture.position.set(lx, 4.5, lz);
+        fixture.position.set(lx, 9, lz);
         dungeonScene.add(fixture);
     }
 }
