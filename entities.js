@@ -43,6 +43,10 @@ let aimPitch = 0; // vertical aim angle from the camera look (FPS); 0 = level
 // Platform cache
 let platformsCache = [];
 
+// Yaw the player was rotated by this frame from riding a spinning ring (0 if not).
+let carryYawDelta = 0;
+export function getCarryYawDelta() { return carryYawDelta; }
+
 // ============================================
 // INITIALIZATION
 // ============================================
@@ -155,6 +159,7 @@ function updatePlayer(delta, inputState) {
     
     const { moveX, moveZ, jump, attack } = inputState;
     const userData = player.userData;
+    carryYawDelta = 0;   // set by carryOnRing if the player is riding a spinning ring
 
     // Vertical aim follows the camera pitch while in FPS; level otherwise.
     aimPitch = inputState.cameraRelative ? (inputState.cameraPitch || 0) : 0;
@@ -304,6 +309,7 @@ function carryOnRing() {
     const ndz = -dx * sa + dz * ca;
     player.position.x = ring.cx + ndx;
     player.position.z = ring.cz + ndz;
+    carryYawDelta = a;   // turn the view with the platform by the same amount
     // Walked past the arc's ends or off the band? Step off and fall.
     const pr = player.userData.radius;
     const r = Math.hypot(ndx, ndz);
