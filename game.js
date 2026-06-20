@@ -4,7 +4,7 @@
 // ============================================
 
 import * as THREE from 'three';
-import { initDungeon, getDungeonScene, loadFloor, getRoomData, getCurrentFloor, setCurrentFloor, disposeDungeon } from './dungeon.js';
+import { initDungeon, getDungeonScene, loadFloor, getRoomData, getCurrentFloor, setCurrentFloor, disposeDungeon, updateRotatingRings } from './dungeon.js';
 import { initTown, getTownScene, disposeTown, showNPCDialogue, setNPCInteractionCallback } from './town.js';
 import { initControls, updateControls, getInputState, resetInput, setCameraTarget, setCameraMode, setFPSLook } from './controls.js';
 import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, setGameBridge } from './entities.js';
@@ -127,6 +127,9 @@ function animate() {
     
     if (gameState === 'dungeon' || gameState === 'town') {
         const inputState = getInputState();
+        
+        // Spin the north-room rings before physics so a carried player moves with them.
+        if (gameState === 'dungeon') updateRotatingRings(delta);
         
         // Player movement/physics runs in BOTH town and dungeon.
         // (Previously this was dungeon-only, so the joystick moved nothing in
