@@ -137,6 +137,13 @@ export function setFPSLook(yaw, pitch = -0.05) {
     inputState.cameraPitch = pitch;
 }
 
+// Rotate the first-person view by a delta. Used when a rotating platform carries
+// the player around, so their gaze (and aim) turn with the platform.
+export function addFPSYaw(deltaYaw) {
+    fps.yaw += deltaYaw;
+    inputState.cameraYaw = fps.yaw;
+}
+
 // Apply look input (swipe/mouse drag) according to the active camera mode
 function applyLook(dx, dy) {
     if (cameraMode === 'fps') {
