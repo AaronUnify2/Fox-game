@@ -246,7 +246,8 @@ export function enterDungeon(floor = null) {
     const player = getPlayer();
     const centerRoom = getRoomData('center');
     if (player && centerRoom) {
-        player.position.set(centerRoom.x, 0, centerRoom.z);
+        // Spawn just off the central pillar (now solid), facing it and the room.
+        player.position.set(centerRoom.x, 0, centerRoom.z - 5);
         currentScene.add(player);
     }
     
