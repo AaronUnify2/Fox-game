@@ -223,6 +223,7 @@ function createCenterRoom(theme) {
     const pillar = new THREE.Mesh(pillarGeom, pillarMat);
     pillar.position.set(room.x, 3, room.z);
     pillar.castShadow = true;
+    pillar.userData = { isWall: true };
     dungeonScene.add(pillar);
     
     // Glowing top
@@ -342,6 +343,7 @@ function createSouthRoom(theme) {
         );
         pillar.position.set(room.x + px, 2, room.z + pz);
         pillar.castShadow = true;
+        pillar.userData = { isWall: true };
         dungeonScene.add(pillar);
     });
 }
@@ -484,6 +486,7 @@ function createHallway(x1, z1, x2, z2, theme) {
         wall.position.z += Math.sin(angle + Math.PI / 2) * 3 * side;
         wall.castShadow = true;
         wall.receiveShadow = true;
+        wall.userData = { isWall: true };
         dungeonScene.add(wall);
     });
     
@@ -555,6 +558,7 @@ function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
         wall.rotation.y = -mid + Math.PI / 2; // lay the segment tangent to the ring
         wall.castShadow = true;
         wall.receiveShadow = true;
+        wall.userData = { isWall: true };
         dungeonScene.add(wall);
 
         // Record both angular ends of this kept segment (points on the ring).
@@ -592,6 +596,7 @@ function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
             jamb.rotation.y = -Math.atan2(jz, jx);
             jamb.castShadow = true;
             jamb.receiveShadow = true;
+            jamb.userData = { isWall: true };
             dungeonScene.add(jamb);
         }
     }
@@ -623,6 +628,7 @@ function createRectWalls(cx, cz, halfSize, theme, gapSide = null) {
         wall.position.set(...cfg.pos);
         wall.castShadow = true;
         wall.receiveShadow = true;
+        wall.userData = { isWall: true };
         dungeonScene.add(wall);
     });
 
@@ -642,6 +648,7 @@ function createRectWalls(cx, cz, halfSize, theme, gapSide = null) {
             seg.position.set(wx, 12, cz + (inner + outer) / 2);
             seg.castShadow = true;
             seg.receiveShadow = true;
+            seg.userData = { isWall: true };
             dungeonScene.add(seg);
         });
     }
