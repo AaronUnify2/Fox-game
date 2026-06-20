@@ -4,7 +4,7 @@
 // ============================================
 
 import * as THREE from 'three';
-import { getDungeonScene, getRoomData } from './dungeon.js';
+import { getDungeonScene, getRoomData, getRotatingRings } from './dungeon.js';
 
 // ============================================
 // GAME BRIDGE (to avoid circular imports)
@@ -137,7 +137,8 @@ function createPlayer() {
         jumpForce: 12,
         gravity: -25,
         invulnerable: false,
-        invulnerableTimer: 0
+        invulnerableTimer: 0,
+        standingRing: null   // the rotating arc the player is currently riding
     };
     
     player.position.set(0, 0, 0);
@@ -194,6 +195,7 @@ function updatePlayer(delta, inputState) {
     if (jump && userData.onGround) {
         userData.velocity.y = userData.jumpForce;
         userData.onGround = false;
+        userData.standingRing = null;   // step off the ring when launching
     }
     
     // Wall jump (infinite)
@@ -218,9 +220,15 @@ function updatePlayer(delta, inputState) {
         userData.velocity.y = 0;
         userData.onGround = true;
         userData.canWallJump = false;
+        userData.standingRing = null;
     }
     
-    if (userData.velocity.y < 0) checkPlatformCollision();
+    if (userData.velocity.y < 0) {
+        checkPlatformCollision();
+        checkRingLanding();
+    }
+    // Ride the arc you're standing on (and fall off if you walk past its edges)
+    if (userData.onGround && userData.standingRing) carryOnRing();
     checkWallCollision();
     
     // Combat
@@ -258,6 +266,55 @@ function checkPlatformCollision() {
             player.userData.onGround = true;
             break;
         }
+    }
+}
+
+function checkRingLanding() {
+    const rings = getRotatingRings();
+    if (!rings || rings.length === 0) return;
+    const pr = player.userData.radius;
+    const px = player.position.x, pz = player.position.z, py = player.position.y;
+    const TAU = Math.PI * 2;
+    for (const ring of rings) {
+        const dx = px - ring.cx, dz = pz - ring.cz;
+        const r = Math.hypot(dx, dz);
+        if (r < ring.innerR - pr || r > ring.outerR + pr) continue;
+        // local angle on the ring = world angle + current spin; solid arc is [0, L]
+        let al = (Math.atan2(dz, dx) + ring.spin) % TAU;
+        if (al < 0) al += TAU;
+        if (al > ring.arcLength) continue;   // over the open wedge -> no landing
+        if (py >= ring.top - 0.5 && py <= ring.top + 1) {
+            player.position.y = ring.top;
+            player.userData.velocity.y = 0;
+            player.userData.onGround = true;
+            player.userData.standingRing = ring;
+            break;
+        }
+    }
+}
+
+function carryOnRing() {
+    const ring = player.userData.standingRing;
+    if (!ring) return;
+    const dx = player.position.x - ring.cx;
+    const dz = player.position.z - ring.cz;
+    // Carry the player around with the ring (rotate by this frame's spin amount)
+    const a = ring.lastDelta, ca = Math.cos(a), sa = Math.sin(a);
+    const ndx = dx * ca + dz * sa;
+    const ndz = -dx * sa + dz * ca;
+    player.position.x = ring.cx + ndx;
+    player.position.z = ring.cz + ndz;
+    // Walked past the arc's ends or off the band? Step off and fall.
+    const pr = player.userData.radius;
+    const r = Math.hypot(ndx, ndz);
+    const TAU = Math.PI * 2;
+    let al = (Math.atan2(ndz, ndx) + ring.spin) % TAU;
+    if (al < 0) al += TAU;
+    const onBand = r >= ring.innerR - pr && r <= ring.outerR + pr;
+    const onArc = al <= ring.arcLength;
+    if (!onBand || !onArc) {
+        player.userData.onGround = false;
+        player.userData.standingRing = null;
     }
 }
 
