@@ -461,7 +461,7 @@ function createHallway(x1, z1, x2, z2, theme) {
     dungeonScene.add(floor);
     
     // Walls
-    const wallGeom = new THREE.BoxGeometry(length, 5, 0.5);
+    const wallGeom = new THREE.BoxGeometry(length, 20, 0.5);
     const wallMat = new THREE.MeshStandardMaterial({
         color: theme.wallColor,
         roughness: 0.8,
@@ -470,7 +470,7 @@ function createHallway(x1, z1, x2, z2, theme) {
     
     [-1, 1].forEach(side => {
         const wall = new THREE.Mesh(wallGeom, wallMat);
-        wall.position.set(centerX, 2.5, centerZ);
+        wall.position.set(centerX, 10, centerZ);
         wall.rotation.y = -angle;
         wall.position.x += Math.cos(angle + Math.PI / 2) * 3 * side;
         wall.position.z += Math.sin(angle + Math.PI / 2) * 3 * side;
@@ -542,8 +542,8 @@ function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
         }
         if (skip) continue;
 
-        const wall = new THREE.Mesh(new THREE.BoxGeometry(segLen, 6, 0.6), wallMat);
-        wall.position.set(cx + Math.cos(mid) * radius, 3, cz + Math.sin(mid) * radius);
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(segLen, 24, 0.6), wallMat);
+        wall.position.set(cx + Math.cos(mid) * radius, 12, cz + Math.sin(mid) * radius);
         wall.rotation.y = -mid + Math.PI / 2; // lay the segment tangent to the ring
         wall.castShadow = true;
         wall.receiveShadow = true;
@@ -579,8 +579,8 @@ function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
             const jx = best.x - corrX, jz = best.z - corrZ;
             const len = Math.hypot(jx, jz);
             if (len < 0.05) continue;
-            const jamb = new THREE.Mesh(new THREE.BoxGeometry(len + 0.8, 6, 0.7), wallMat);
-            jamb.position.set((best.x + corrX) / 2, 3, (best.z + corrZ) / 2);
+            const jamb = new THREE.Mesh(new THREE.BoxGeometry(len + 0.8, 24, 0.7), wallMat);
+            jamb.position.set((best.x + corrX) / 2, 12, (best.z + corrZ) / 2);
             jamb.rotation.y = -Math.atan2(jz, jx);
             jamb.castShadow = true;
             jamb.receiveShadow = true;
@@ -598,10 +598,10 @@ function createRectWalls(cx, cz, halfSize, theme, gapSide = null) {
     
     const sides = ['north', 'south', 'east', 'west'];
     const configs = {
-        north: { pos: [cx, 3, cz - halfSize], size: [halfSize * 2, 6, 0.5], rot: 0 },
-        south: { pos: [cx, 3, cz + halfSize], size: [halfSize * 2, 6, 0.5], rot: 0 },
-        east: { pos: [cx + halfSize, 3, cz], size: [0.5, 6, halfSize * 2], rot: 0 },
-        west: { pos: [cx - halfSize, 3, cz], size: [0.5, 6, halfSize * 2], rot: 0 }
+        north: { pos: [cx, 12, cz - halfSize], size: [halfSize * 2, 24, 0.5], rot: 0 },
+        south: { pos: [cx, 12, cz + halfSize], size: [halfSize * 2, 24, 0.5], rot: 0 },
+        east: { pos: [cx + halfSize, 12, cz], size: [0.5, 24, halfSize * 2], rot: 0 },
+        west: { pos: [cx - halfSize, 12, cz], size: [0.5, 24, halfSize * 2], rot: 0 }
     };
     
     sides.forEach(side => {
@@ -630,8 +630,8 @@ function createRectWalls(cx, cz, halfSize, theme, gapSide = null) {
             const outer = halfSize * s;                // room corner
             const segLen = Math.abs(outer - inner);
             if (segLen < 0.1) return;
-            const seg = new THREE.Mesh(new THREE.BoxGeometry(0.5, 6, segLen), jambMat);
-            seg.position.set(wx, 3, cz + (inner + outer) / 2);
+            const seg = new THREE.Mesh(new THREE.BoxGeometry(0.5, 24, segLen), jambMat);
+            seg.position.set(wx, 12, cz + (inner + outer) / 2);
             seg.castShadow = true;
             seg.receiveShadow = true;
             dungeonScene.add(seg);
