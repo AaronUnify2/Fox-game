@@ -225,9 +225,6 @@ function createCenterRoom(theme) {
     const glow = new THREE.Mesh(glowGeom, glowMat);
     glow.position.set(room.x, 6.5, room.z);
     dungeonScene.add(glow);
-    
-    // Platforms
-    createPlatforms(room.x, room.z, room.radius, 4, theme);
 }
 
 function createNorthRoom(theme, floor) {
@@ -250,6 +247,49 @@ function createNorthRoom(theme, floor) {
     
     // Walls
     createRingWalls(room.x, room.z, room.radius, theme, [Math.PI/2]); // door faces center (south)
+    
+    const platMatN = new THREE.MeshStandardMaterial({
+        color: theme.platformColor,
+        roughness: 0.7,
+        metalness: 0.3
+    });
+    
+    // Ascending spiral of floating platforms, winding inward toward the boss
+    const spiralCount = 12;
+    for (let i = 0; i < spiralCount; i++) {
+        const angle = (i / spiralCount) * Math.PI * 4;   // ~2 full turns
+        const dist = 11 - (i / spiralCount) * 5;         // 11 -> 6, drawing inward
+        const height = 2 + (i / spiralCount) * 7;        // 2 -> 9, climbing
+        const plat = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 2.2), platMatN);
+        plat.position.set(
+            room.x + Math.cos(angle) * dist,
+            height,
+            room.z + Math.sin(angle) * dist
+        );
+        plat.rotation.y = angle + Math.PI / 2;
+        plat.castShadow = true;
+        plat.receiveShadow = true;
+        plat.userData = { isPlatform: true };
+        dungeonScene.add(plat);
+    }
+    
+    // Outer ring of low stepping platforms near the walls
+    const ringCount = 6;
+    for (let i = 0; i < ringCount; i++) {
+        const angle = (i / ringCount) * Math.PI * 2;     // 0,60,120... keeps door (90 deg) clear
+        const height = 1.5 + (i % 2) * 1.0;              // alternating 1.5 / 2.5
+        const plat = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 2.6), platMatN);
+        plat.position.set(
+            room.x + Math.cos(angle) * 12.5,
+            height,
+            room.z + Math.sin(angle) * 12.5
+        );
+        plat.rotation.y = angle;
+        plat.castShadow = true;
+        plat.receiveShadow = true;
+        plat.userData = { isPlatform: true };
+        dungeonScene.add(plat);
+    }
     
     // Conduit lines on floor
     const lineMat = new THREE.MeshBasicMaterial({
