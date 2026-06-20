@@ -251,31 +251,6 @@ function createNorthRoom(theme, floor) {
     // Walls
     createRingWalls(room.x, room.z, room.radius, theme, [Math.PI/2]); // door faces center (south)
     
-    // Spiral platforms around where pillar boss will be
-    for (let i = 0; i < 8; i++) {
-        const angle = (i / 8) * Math.PI * 2;
-        const dist = 8;
-        const height = 2 + (i % 4) * 3;
-        
-        const platGeom = new THREE.BoxGeometry(3, 0.5, 2);
-        const platMat = new THREE.MeshStandardMaterial({
-            color: theme.platformColor,
-            roughness: 0.7,
-            metalness: 0.3
-        });
-        const plat = new THREE.Mesh(platGeom, platMat);
-        plat.position.set(
-            room.x + Math.cos(angle) * dist,
-            height,
-            room.z + Math.sin(angle) * dist
-        );
-        plat.rotation.y = angle + Math.PI / 2;
-        plat.castShadow = true;
-        plat.receiveShadow = true;
-        plat.userData = { isPlatform: true };
-        dungeonScene.add(plat);
-    }
-    
     // Conduit lines on floor
     const lineMat = new THREE.MeshBasicMaterial({
         color: theme.accentColor,
@@ -310,9 +285,6 @@ function createSouthRoom(theme) {
     
     // Walls
     createRingWalls(room.x, room.z, room.radius, theme, [-Math.PI/2]); // door faces center (north)
-    
-    // Combat platforms
-    createPlatforms(room.x, room.z, room.radius * 0.6, 3, theme);
     
     // Pillars for cover
     const pillarPositions = [
@@ -427,24 +399,6 @@ function createWestRoom(theme, floor) {
     ring.rotation.x = Math.PI / 2;
     ring.position.set(room.x, 0.1, room.z);
     dungeonScene.add(ring);
-    
-    // Raised platforms at edges
-    for (let i = 0; i < 4; i++) {
-        const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
-        const plat = new THREE.Mesh(
-            new THREE.BoxGeometry(3, 1, 3),
-            new THREE.MeshStandardMaterial({ color: theme.platformColor, roughness: 0.7 })
-        );
-        plat.position.set(
-            room.x + Math.cos(angle) * (room.radius - 3),
-            0.5,
-            room.z + Math.sin(angle) * (room.radius - 3)
-        );
-        plat.castShadow = true;
-        plat.receiveShadow = true;
-        plat.userData = { isPlatform: true };
-        dungeonScene.add(plat);
-    }
 }
 
 // ============================================
@@ -533,12 +487,13 @@ function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
         metalness: 0.2
     });
 
-    // Segment count scales with circumference so segments are ~4 units long.
-    const segments = Math.max(12, Math.min(32, Math.round((2 * Math.PI * radius) / 4)));
+    // Finer segments = smoother ring and shorter doorway jambs.
+    const segments = Math.max(12, Math.min(48, Math.round((2 * Math.PI * radius) / 3)));
     const segArc = (2 * Math.PI) / segments;
     const segLen = (2 * Math.PI * radius / segments) * 1.04; // slight overlap = no corner gaps
     const openHalf = (gapWidth / 2) / radius;                // half-width of a doorway, in radians
 
+    const keptEdges = []; // gap-facing endpoints of the segments next to each doorway
     for (let i = 0; i < segments; i++) {
         const mid = (i + 0.5) * segArc;
 
@@ -556,20 +511,43 @@ function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
         wall.castShadow = true;
         wall.receiveShadow = true;
         dungeonScene.add(wall);
+
+        // Record both angular ends of this kept segment (points on the ring).
+        for (const e of [mid - segArc / 2, mid + segArc / 2]) {
+            keptEdges.push({ ang: e, x: cx + Math.cos(e) * radius, z: cz + Math.sin(e) * radius });
+        }
     }
 
-    // Door frames: a post on each side of every opening, sitting where the
-    // curved room wall stops, to bridge the gap to the straight hallway walls.
+    // Door jambs: for each opening, find where the curved wall actually ends on
+    // each side and run a short wall from that point to the straight corridor
+    // wall (perp +/-3). This closes the wedge gap no matter how the segments fall.
     for (const o of openings) {
-        const dx = Math.cos(o), dz = Math.sin(o);   // door axis (outward)
-        const px = -Math.sin(o), pz = Math.cos(o);  // perpendicular (across doorway)
-        for (const side of [-1, 1]) {
-            const off = 3.4 * side;                 // just outside the 6-wide corridor
-            const post = new THREE.Mesh(new THREE.BoxGeometry(1.4, 6, 1.4), wallMat);
-            post.position.set(cx + dx * radius + px * off, 3, cz + dz * radius + pz * off);
-            post.castShadow = true;
-            post.receiveShadow = true;
-            dungeonScene.add(post);
+        const dax = Math.cos(o), daz = Math.sin(o);   // door axis (outward)
+        const px = -Math.sin(o), pz = Math.cos(o);    // perpendicular across the doorway
+        for (const side of [1, -1]) {
+            // Point where the corridor wall meets the room edge, this side.
+            const corrX = cx + dax * radius + px * (3 * side);
+            const corrZ = cz + daz * radius + pz * (3 * side);
+
+            // Nearest kept ring edge on the same side as this corridor wall
+            // (+perp side corresponds to +angular offset from the door).
+            let best = null, bestD = Infinity;
+            for (const e of keptEdges) {
+                const d = Math.atan2(Math.sin(e.ang - o), Math.cos(e.ang - o));
+                if (Math.sign(d) !== side) continue;
+                if (Math.abs(d) < bestD) { bestD = Math.abs(d); best = e; }
+            }
+            if (!best) continue;
+
+            const jx = best.x - corrX, jz = best.z - corrZ;
+            const len = Math.hypot(jx, jz);
+            if (len < 0.05) continue;
+            const jamb = new THREE.Mesh(new THREE.BoxGeometry(len + 0.8, 6, 0.7), wallMat);
+            jamb.position.set((best.x + corrX) / 2, 3, (best.z + corrZ) / 2);
+            jamb.rotation.y = -Math.atan2(jz, jx);
+            jamb.castShadow = true;
+            jamb.receiveShadow = true;
+            dungeonScene.add(jamb);
         }
     }
 }
@@ -602,6 +580,26 @@ function createRectWalls(cx, cz, halfSize, theme, gapSide = null) {
         wall.receiveShadow = true;
         dungeonScene.add(wall);
     });
+
+    // Doorway jambs on the open side so the corridor (6 wide) meets a framed
+    // opening instead of a fully open wall. Only the west side is opened here.
+    if (gapSide === 'west') {
+        const jambMat = wallMat;
+        // The west wall spans z in [cz-halfSize, cz+halfSize] at x = cx-halfSize.
+        // Leave a 6-wide doorway centred on cz; wall the rest.
+        const wx = cx - halfSize;
+        [[-1], [1]].forEach(([s]) => {
+            const inner = 3 * s;                       // edge of the 6-wide doorway
+            const outer = halfSize * s;                // room corner
+            const segLen = Math.abs(outer - inner);
+            if (segLen < 0.1) return;
+            const seg = new THREE.Mesh(new THREE.BoxGeometry(0.5, 6, segLen), jambMat);
+            seg.position.set(wx, 3, cz + (inner + outer) / 2);
+            seg.castShadow = true;
+            seg.receiveShadow = true;
+            dungeonScene.add(seg);
+        });
+    }
 }
 
 // ============================================
@@ -842,4 +840,4 @@ function createAmbientParticles(theme) {
     const particles = new THREE.Points(geometry, material);
     particles.name = 'ambientParticles';
     dungeonScene.add(particles);
-            }
+}
