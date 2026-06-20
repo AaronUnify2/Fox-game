@@ -6,8 +6,8 @@
 import * as THREE from 'three';
 import { initDungeon, getDungeonScene, loadFloor, getRoomData, getCurrentFloor, setCurrentFloor, disposeDungeon, updateRotatingRings } from './dungeon.js';
 import { initTown, getTownScene, disposeTown, showNPCDialogue, setNPCInteractionCallback } from './town.js';
-import { initControls, updateControls, getInputState, resetInput, setCameraTarget, setCameraMode, setFPSLook } from './controls.js';
-import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, setGameBridge } from './entities.js';
+import { initControls, updateControls, getInputState, resetInput, setCameraTarget, setCameraMode, setFPSLook, addFPSYaw } from './controls.js';
+import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, setGameBridge, getCarryYawDelta } from './entities.js';
 
 // ============================================
 // GAME STATE
@@ -145,6 +145,10 @@ function animate() {
         }
         
         if (gameState === 'dungeon') {
+            // Riding a spinning ring turns the view with it, so aiming stays steady.
+            const cy = getCarryYawDelta();
+            if (cy !== 0) addFPSYaw(cy);
+            
             checkRoomTransitions();
             checkPlayerDeath();
         }
