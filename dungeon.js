@@ -87,6 +87,14 @@ export function loadFloor(floor) {
     createHallway(10, 0, 34, 0, theme);     // Center <-> East
     createHallway(-10, 0, -30, 0, theme);   // Center <-> West
     
+    // Ceilings over every room (east is rectangular; the others are round).
+    // Capped at the wall tops (y = 24) and non-shadow-casting so the directional
+    // fill still reaches the floor.
+    Object.keys(roomData).forEach(name => {
+        const room = roomData[name];
+        addRoomCeiling(room.x, room.z, room.radius, theme, name === 'east');
+    });
+    
     // Add decorations
     createDecorations(theme, floor);
 }
@@ -484,7 +492,7 @@ function createHallway(x1, z1, x2, z2, theme) {
         new THREE.BoxGeometry(length, 0.3, 6),
         wallMat
     );
-    ceiling.position.set(centerX, 10, centerZ);
+    ceiling.position.set(centerX, 20, centerZ);
     ceiling.rotation.y = -angle;
     dungeonScene.add(ceiling);
     
@@ -495,8 +503,8 @@ function createHallway(x1, z1, x2, z2, theme) {
         const lx = x1 + (x2 - x1) * t;
         const lz = z1 + (z2 - z1) * t;
         
-        const light = new THREE.PointLight(theme.accentColor, 2.2, 16);
-        light.position.set(lx, 8, lz);
+        const light = new THREE.PointLight(theme.accentColor, 2.5, 20);
+        light.position.set(lx, 17, lz);
         dungeonScene.add(light);
         
         // Light fixture
@@ -508,7 +516,7 @@ function createHallway(x1, z1, x2, z2, theme) {
                 opacity: 0.8
             })
         );
-        fixture.position.set(lx, 9, lz);
+        fixture.position.set(lx, 19, lz);
         dungeonScene.add(fixture);
     }
 }
@@ -637,6 +645,25 @@ function createRectWalls(cx, cz, halfSize, theme, gapSide = null) {
             dungeonScene.add(seg);
         });
     }
+}
+
+// Cap a room at the top of its 24-high walls. Round rooms get a disc; the
+// rectangular east room gets a square slab. castShadow is left off so the
+// scene's directional light still lights the floor below.
+function addRoomCeiling(cx, cz, radius, theme, rect) {
+    const mat = new THREE.MeshStandardMaterial({
+        color: theme.wallColor,
+        roughness: 0.85,
+        metalness: 0.2
+    });
+    const geom = rect
+        ? new THREE.BoxGeometry(radius * 2, 0.4, radius * 2)
+        : new THREE.CylinderGeometry(radius + 0.3, radius + 0.3, 0.4, 32);
+    const ceiling = new THREE.Mesh(geom, mat);
+    ceiling.position.set(cx, 24, cz);
+    ceiling.castShadow = false;
+    ceiling.receiveShadow = true;
+    dungeonScene.add(ceiling);
 }
 
 // ============================================
