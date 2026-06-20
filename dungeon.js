@@ -7,6 +7,7 @@ import * as THREE from 'three';
 
 let dungeonScene;
 let currentFloor = 1;
+let rotatingRings = [];   // north-room arc platforms (the rotating climb)
 
 // Room layout data
 const roomData = {
@@ -43,6 +44,7 @@ export function getRoomData(roomName) {
 }
 
 export function disposeDungeon() {
+    rotatingRings = [];
     // Clear scene
     while (dungeonScene.children.length > 0) {
         dungeonScene.remove(dungeonScene.children[0]);
@@ -248,48 +250,43 @@ function createNorthRoom(theme, floor) {
     // Walls
     createRingWalls(room.x, room.z, room.radius, theme, [Math.PI/2]); // door faces center (south)
     
-    const platMatN = new THREE.MeshStandardMaterial({
+    // --- Rotating arc-platform climb ---
+    // Five concentric rings stacked above one another. Each is an arc covering
+    // part of a circle (the rest is open air) and spins about the vertical axis.
+    // The player rides whichever arc they stand on and times jumps up through the
+    // gaps to the next level. Spacing (~2.3) is inside the jump height (~2.9), and
+    // the climb ramps: higher rings have smaller arcs and spin faster.
+    const ringMat = new THREE.MeshStandardMaterial({
         color: theme.platformColor,
         roughness: 0.7,
-        metalness: 0.3
+        metalness: 0.3,
+        emissive: theme.accentColor,
+        emissiveIntensity: 0.15
     });
-    
-    // Ascending spiral of floating platforms, winding inward toward the boss
-    const spiralCount = 12;
-    for (let i = 0; i < spiralCount; i++) {
-        const angle = (i / spiralCount) * Math.PI * 4;   // ~2 full turns
-        const dist = 11 - (i / spiralCount) * 5;         // 11 -> 6, drawing inward
-        const height = 2 + (i / spiralCount) * 7;        // 2 -> 9, climbing
-        const plat = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 2.2), platMatN);
-        plat.position.set(
-            room.x + Math.cos(angle) * dist,
-            height,
-            room.z + Math.sin(angle) * dist
-        );
-        plat.rotation.y = angle + Math.PI / 2;
-        plat.castShadow = true;
-        plat.receiveShadow = true;
-        plat.userData = { isPlatform: true };
-        dungeonScene.add(plat);
-    }
-    
-    // Outer ring of low stepping platforms near the walls
-    const ringCount = 6;
-    for (let i = 0; i < ringCount; i++) {
-        const angle = (i / ringCount) * Math.PI * 2;     // 0,60,120... keeps door (90 deg) clear
-        const height = 1.5 + (i % 2) * 1.0;              // alternating 1.5 / 2.5
-        const plat = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 2.6), platMatN);
-        plat.position.set(
-            room.x + Math.cos(angle) * 12.5,
-            height,
-            room.z + Math.sin(angle) * 12.5
-        );
-        plat.rotation.y = angle;
-        plat.castShadow = true;
-        plat.receiveShadow = true;
-        plat.userData = { isPlatform: true };
-        dungeonScene.add(plat);
-    }
+    const innerR = 6.75, outerR = 9.25, thickness = 0.4;
+    const levels = [
+        { height: 2.5,  arc: 4.54, speed:  0.30 },  // ~260 deg, slow
+        { height: 4.8,  arc: 3.75, speed: -0.45 },  // ~215 deg
+        { height: 7.1,  arc: 2.97, speed:  0.62 },  // ~170 deg
+        { height: 9.4,  arc: 2.18, speed: -0.82 },  // ~125 deg
+        { height: 11.7, arc: 1.57, speed:  1.05 }   // ~90 deg, fast
+    ];
+    levels.forEach((lv, i) => {
+        const geom = makeArcGeometry(innerR, outerR, lv.arc, thickness);
+        const mesh = new THREE.Mesh(geom, ringMat);
+        mesh.receiveShadow = true;   // catches light, but does NOT cast (perf + no flicker)
+        const group = new THREE.Group();
+        group.add(mesh);
+        group.position.set(room.x, lv.height, room.z);
+        const spin = i * 1.25;       // stagger start phases so gaps don't line up
+        group.rotation.y = spin;
+        dungeonScene.add(group);
+        rotatingRings.push({
+            group, cx: room.x, cz: room.z,
+            innerR, outerR, top: lv.height,
+            arcLength: lv.arc, speed: lv.speed, spin, lastDelta: 0
+        });
+    });
     
     // Conduit lines on floor
     const lineMat = new THREE.MeshBasicMaterial({
@@ -645,6 +642,39 @@ function createRectWalls(cx, cz, halfSize, theme, gapSide = null) {
 // ============================================
 // PLATFORMS
 // ============================================
+
+// ROTATING-RING HELPERS (north room)
+// Build a flat, solid annular-sector slab. The solid arc occupies LOCAL angle
+// [0, L] (measured as atan2(z, x) in the ring group's frame); the rest is open.
+// The top surface sits at local y = 0, so a ring group placed at y = height lands
+// the player exactly at that height.
+function makeArcGeometry(innerR, outerR, L, thickness) {
+    const shape = new THREE.Shape();
+    const a0 = -L, a1 = 0;
+    shape.moveTo(Math.cos(a0) * innerR, Math.sin(a0) * innerR);
+    shape.lineTo(Math.cos(a0) * outerR, Math.sin(a0) * outerR);
+    shape.absarc(0, 0, outerR, a0, a1, false);   // outer arc forward
+    shape.lineTo(Math.cos(a1) * innerR, Math.sin(a1) * innerR);
+    shape.absarc(0, 0, innerR, a1, a0, true);     // inner arc back
+    const geom = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+    geom.rotateX(-Math.PI / 2);          // lay flat, thickness becomes vertical
+    geom.translate(0, -thickness, 0);    // put the top surface at local y = 0
+    return geom;
+}
+
+// Spin every ring by this frame's amount. Called from the game loop BEFORE the
+// player update so the carry logic can use each ring's lastDelta.
+export function updateRotatingRings(delta) {
+    for (const r of rotatingRings) {
+        r.lastDelta = r.speed * delta;
+        r.spin += r.lastDelta;
+        r.group.rotation.y = r.spin;
+    }
+}
+
+export function getRotatingRings() {
+    return rotatingRings;
+}
 
 function createPlatforms(cx, cz, radius, count, theme) {
     for (let i = 0; i < count; i++) {
