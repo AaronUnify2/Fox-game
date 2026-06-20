@@ -29,8 +29,8 @@ function faceToward(x, z, tx, tz) {
 // obelisk. Every site is turned so its local +Z (front) opens toward the commons.
 const SITES = {
     wanderer:      { x: -16, z: 4,   type: 'wanderer' },      // gypsy caravan + campfire
-    merchant:      { x: 14,  z: 12,  type: 'merchant' },      // oak trade caravan
-    quartermaster: { x: 16,  z: -2,  type: 'quartermaster' }, // brewing house
+    merchant:      { x: 15,  z: 17,  type: 'merchant' },      // oak trade caravan (south)
+    quartermaster: { x: 16,  z: 5,   type: 'quartermaster' }, // brewing house (south)
     keeper:        { x: 8,   z: -11, type: 'keeper' },        // chapel
     scholar:       { x: -8,  z: -14, type: 'scholar' }        // mage tower + plinth ring
 };
@@ -682,9 +682,10 @@ function createBrewingHouse(x, z, rot) {
     const door = bBox(1.2, 2.2, 0.15, bMat(0x3a2a1a)); door.position.set(0, 1.1, 2.55); g.add(door);
     const win = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.0), bGlow(0xff9944, 0.5)); win.position.set(-1.7, 2.6, 2.56); g.add(win);
     const potions = [0x33ff77, 0xaa44ff, 0x33ddff, 0xff8833, 0xff4466];
-    [[-1.9, 3.0], [0.2, 3.6], [2.0, 3.0], [-2.7, 1.4], [2.7, 1.4]].forEach(([sx, sz], i) => g.add(bStove(sx, sz, potions[i])));
-    const l1 = new THREE.PointLight(0xff8844, 2.0, 12, 1.7); l1.position.set(0, 1.4, 3.0); g.add(l1);
-    const l2 = new THREE.PointLight(0x66ddaa, 1.0, 9, 1.8); l2.position.set(0, 1.0, 2.4); g.add(l2);
+    // stoves stand out in the yard, clear of the house front (local z = 2.5)
+    [[-2.2, 4.6], [0, 5.6], [2.2, 4.6], [-3.0, 3.4], [3.0, 3.4]].forEach(([sx, sz], i) => g.add(bStove(sx, sz, potions[i])));
+    const l1 = new THREE.PointLight(0xff8844, 2.0, 12, 1.7); l1.position.set(0, 1.4, 4.4); g.add(l1);
+    const l2 = new THREE.PointLight(0x66ddaa, 1.0, 9, 1.8); l2.position.set(0, 1.0, 5.2); g.add(l2);
 }
 
 // ---- 4. The Keeper: a chapel that reveres the obelisk ----
@@ -755,7 +756,7 @@ function createNPCs() {
         { site: 'merchant', lx: 0, lz: 1.3, type: 'merchant',
           robeColor: 0x5d4037, accentColor: 0xffcc00, name: 'The Merchant',
           dialogue: 'Step up to the counter. Everything on this wagon was hauled up the one road — so haggle gently.' },
-        { site: 'quartermaster', lx: 0, lz: 1.7, type: 'quartermaster',
+        { site: 'quartermaster', lx: -0.8, lz: 4.6, type: 'quartermaster',
           robeColor: 0x4e342e, accentColor: 0x66ddaa, name: 'The Quartermaster',
           dialogue: 'Mind the pots. Healing draughts, nerve tonics, worse things — all brewing at once.' },
         { site: 'keeper', lx: 0, lz: 6.0, type: 'keeper',
