@@ -46,7 +46,8 @@
             <!-- Action buttons (right side) -->
             <div id="action-buttons">
                 <button id="btn-jump" class="action-btn">JUMP</button>
-                <button id="btn-attack" class="action-btn attack-btn">ATTACK</button>
+                <button id="btn-sword" class="action-btn sword-btn">SWORD</button>
+                <button id="btn-attack" class="action-btn attack-btn">MAGIC</button>
             </div>
 
             <div id="ability-buttons">
@@ -138,19 +139,6 @@
         }
     }
     </script>
-
-    <script>
-  window.addEventListener('error', function (e) {
-    var b = document.getElementById('err-box') || (function () {
-      var d = document.createElement('div'); d.id = 'err-box';
-      d.style.cssText = 'position:fixed;left:0;top:0;right:0;max-height:60%;overflow:auto;z-index:99999;background:#b00020;color:#fff;font:12px/1.4 monospace;padding:10px;white-space:pre-wrap';
-      document.body.appendChild(d); return d;
-    })();
-    b.textContent += 'ERROR: ' + (e.message || (e.error && e.error.message) || e.type) +
-      '\n' + (e.filename || '') + (e.lineno ? ':' + e.lineno + ':' + e.colno : '') + '\n\n';
-  }, true);
-    </script>
-    
     <script type="module" src="game.js"></script>
 </body>
 </html>
