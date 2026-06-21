@@ -17,8 +17,9 @@ let npcs = [];
 let interactableNPC = null;
 
 // Obelisk (dungeon entrance) — placed in the NE corner so the town has room.
-const OBELISK_POS = { x: 0, z: -16 };   // north-central monument (end of the gate->commons axis)
+const OBELISK_POS = { x: 0, z: -22 };   // north-edge monument (end of the gate->commons axis)
 const COMMONS = { x: 0, z: 2 };   // social heart of the outpost; paths meet here
+const WELL_POS = { x: -20, z: 18 };   // well in the SW corner (kept off the obelisk sightline)
 
 // rotation.y so an object's local +Z (its front/door) points at a target
 function faceToward(x, z, tx, tz) {
@@ -307,21 +308,21 @@ function createCommons() {
     const stone = new THREE.MeshStandardMaterial({ color: 0x4a4640, roughness: 1.0 });
     const wood = new THREE.MeshStandardMaterial({ color: 0x3a2c1e, roughness: 0.95 });
     
-    // Stone well at the heart of the outpost
+    // Stone well, tucked into the SW corner so it doesn't block the obelisk view
     const well = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 1, 12, 1, true), stone);
-    well.position.set(COMMONS.x, 0.5, COMMONS.z);
+    well.position.set(WELL_POS.x, 0.5, WELL_POS.z);
     townScene.add(well);
     const rim = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.18, 8, 16), stone);
     rim.rotation.x = Math.PI / 2;
-    rim.position.set(COMMONS.x, 1, COMMONS.z);
+    rim.position.set(WELL_POS.x, 1, WELL_POS.z);
     townScene.add(rim);
     for (const dx of [-1.1, 1.1]) {
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.4, 6), wood);
-        post.position.set(COMMONS.x + dx, 1.6, COMMONS.z);
+        post.position.set(WELL_POS.x + dx, 1.6, WELL_POS.z);
         townScene.add(post);
     }
     const roof = new THREE.Mesh(new THREE.ConeGeometry(1.8, 1, 4), wood);
-    roof.position.set(COMMONS.x, 3.2, COMMONS.z);
+    roof.position.set(WELL_POS.x, 3.2, WELL_POS.z);
     roof.rotation.y = Math.PI / 4;
     townScene.add(roof);
     
@@ -781,7 +782,7 @@ function createTownCollision() {
     
     // Landmarks
     addCyl(OBELISK_POS.x, OBELISK_POS.z, 1.8);   // obelisk
-    addCyl(COMMONS.x, COMMONS.z, 1.6);           // central well
+    addCyl(WELL_POS.x, WELL_POS.z, 1.6);         // well (SW corner)
     addCyl(COMMONS.x - 4, COMMONS.z + 1, 1.1);   // commons fire pit
 }
 
