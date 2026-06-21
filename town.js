@@ -67,6 +67,7 @@ export async function initTown() {
     createBuildings();
     createNPCs();
     createDecorations();
+    createTownCollision();   // invisible volumes so you can't walk through structures
     createPerimeterTrees(); // wind-bent treeline along the cliff edge
     
     return Promise.resolve();
@@ -746,6 +747,43 @@ function createScholarTower(x, z, rot) {
 // ============================================
 // NPCs
 // ============================================
+
+// Invisible collision volumes so the player can't walk through town structures.
+// Tagged isWall, so the shared wall-collision routine ejects the player. Placed in
+// world space with each building's facing rotation (boxes for footprints, cylinders
+// for round things). Player radius is small, so approximate shapes read fine.
+function createTownCollision() {
+    const mat = new THREE.MeshBasicMaterial();
+    const addBox = (x, z, w, d, rot = 0) => {
+        const box = new THREE.Mesh(new THREE.BoxGeometry(w, 4, d), mat);
+        box.position.set(x, 2, z);
+        box.rotation.y = rot;
+        box.visible = false;
+        box.userData = { isWall: true };
+        townScene.add(box);
+    };
+    const addCyl = (x, z, r) => {
+        const cyl = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 4, 8), mat);
+        cyl.position.set(x, 2, z);
+        cyl.visible = false;
+        cyl.userData = { isWall: true };
+        townScene.add(cyl);
+    };
+    
+    // Buildings (box footprints, each turned to face the commons)
+    const w = SITES.wanderer;      addBox(w.x, w.z, 4.6, 2.4, siteRot(w));   // gypsy caravan body
+    const m = SITES.merchant;      addBox(m.x, m.z, 4.4, 2.2, siteRot(m));   // oak caravan body
+    const q = SITES.quartermaster; addBox(q.x, q.z, 5.0, 5.0, siteRot(q));   // brewing house
+    const s = SITES.scholar;       addCyl(s.x, s.z, 2.4);                    // mage tower
+    const k = SITES.keeper;        const rk = siteRot(k);
+    const kc = localToWorld(k.x, k.z, rk, 0, -1);                            // chapel nave centre
+    addBox(kc.x, kc.z, 5.0, 8.0, rk);
+    
+    // Landmarks
+    addCyl(OBELISK_POS.x, OBELISK_POS.z, 1.8);   // obelisk
+    addCyl(COMMONS.x, COMMONS.z, 1.6);           // central well
+    addCyl(COMMONS.x - 4, COMMONS.z + 1, 1.1);   // commons fire pit
+}
 
 function createNPCs() {
     // Each entry: site key, local anchor (lx,lz) in that building's frame, and config.
