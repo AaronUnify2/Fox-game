@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { initDungeon, getDungeonScene, loadFloor, getRoomData, getCurrentFloor, setCurrentFloor, disposeDungeon, updateRotatingRings, openGate, getSouthChambers } from './dungeon.js';
 import { initTown, getTownScene, disposeTown, showNPCDialogue, setNPCInteractionCallback } from './town.js';
 import { initControls, updateControls, getInputState, resetInput, setCameraTarget, setCameraMode, setFPSLook, addFPSYaw } from './controls.js';
-import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, spawnEnemiesAt, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, getEnemies, getPillarBoss, setGameBridge, getCarryYawDelta } from './entities.js';
+import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, spawnEnemiesAt, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, getGoldGained, resetGoldGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, getEnemies, getPillarBoss, setGameBridge, getCarryYawDelta } from './entities.js';
 
 // ============================================
 // GAME STATE
@@ -23,7 +23,8 @@ const defaultGameData = {
     player: {
         health: 1000,   // TESTING: temporary high health
         maxHealth: 1000, // TESTING: temporary high health
-        xp: 0
+        xp: 0,
+        gold: 0
     },
     upgrades: {
         baseDamage: 0,      // +3 damage per level
@@ -240,6 +241,7 @@ export function enterDungeon(floor = null) {
     disposePillarBoss();
     clearPlatformCache();
     resetXPGained();
+    resetGoldGained();
     
     // Load floor
     loadFloor(getCurrentFloor());
@@ -389,9 +391,11 @@ export function roomCleared(roomName) {
 function floorComplete() {
     const floor = getCurrentFloor();
     const xp = getXPGained();
+    const gold = getGoldGained();
     
-    // Award XP
+    // Award XP and gold
     gameData.player.xp += xp;
+    gameData.player.gold += gold;
     
     // Track progress
     if (!gameData.progress.floorsCompleted.includes(floor)) {
@@ -502,6 +506,7 @@ export function retryFloor() {
     document.getElementById('death-screen').classList.add('hidden');
     gameData.player.health = gameData.player.maxHealth;
     resetXPGained();
+    resetGoldGained();
     enterDungeon(getCurrentFloor());
 }
 
@@ -616,8 +621,11 @@ function updateUI() {
     document.getElementById('health-fill').style.width = healthPercent + '%';
     document.getElementById('health-text').textContent = `${Math.ceil(gameData.player.health)}/${gameData.player.maxHealth}`;
     
-    // XP
-    document.getElementById('xp-display').textContent = `XP: ${gameData.player.xp}`;
+    // XP and gold — banked total plus this floor's haul (rises as orbs are collected)
+    const xpHaul = getXPGained();
+    const goldHaul = getGoldGained();
+    document.getElementById('xp-display').textContent = `XP: ${gameData.player.xp}` + (xpHaul > 0 ? ` (+${xpHaul})` : '');
+    document.getElementById('gold-display').textContent = `Gold: ${gameData.player.gold}` + (goldHaul > 0 ? ` (+${goldHaul})` : '');
     
     // Floor
     document.getElementById('floor-display').textContent = `Floor ${getCurrentFloor()}`;
@@ -630,6 +638,7 @@ function updateUI() {
 
 function updateTownUI() {
     document.getElementById('town-xp').textContent = `XP: ${gameData.player.xp}`;
+    document.getElementById('town-gold').textContent = `Gold: ${gameData.player.gold}`;
     document.getElementById('town-floor').textContent = `Highest Floor: ${gameData.progress.highestFloor}`;
 }
 
