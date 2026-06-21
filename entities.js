@@ -928,6 +928,18 @@ export function spawnEnemiesForRoom(roomType, floor, reduced = false) {
     }
 }
 
+// Spawn `count` enemies in a ring around an arbitrary point. Used by the south
+// wing's sub-chambers, which aren't top-level rooms in roomData.
+export function spawnEnemiesAt(cx, cz, floor, count) {
+    const types = ['drone', 'walker', 'turret', 'wisp'];
+    for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2;
+        const dist = 3 + Math.random() * 3;
+        const pos = new THREE.Vector3(cx + Math.cos(angle) * dist, 0, cz + Math.sin(angle) * dist);
+        createEnemy(types[Math.floor(Math.random() * types.length)], pos, floor);
+    }
+}
+
 export function clearAllEnemies() {
     const scene = getDungeonScene();
     enemies.forEach(e => scene?.remove(e));
