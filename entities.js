@@ -35,7 +35,7 @@ let xpGained = 0;
 
 // Cooldowns
 const cooldowns = { attack: 0, spread: 0, burst: 0, mega: 0 };
-const baseCooldowns = { attack: 0.3, spread: 8, burst: 15, mega: 20 };
+const baseCooldowns = { attack: 1.0, spread: 8, burst: 15, mega: 20 };  // attack = the magic-shot cooldown. Combo rhythm: open with magic, finish with sword. Tune up once melee lands.
 let burstModeActive = false;
 let burstModeTimer = 0;
 let aimPitch = 0; // vertical aim angle from the camera look (FPS); 0 = level
@@ -418,8 +418,8 @@ function updateCooldowns(delta) {
     const cdMod = 1 - (gameBridge.getUpgradeLevel('cooldownReduction') * 0.08);
     ['attack', 'spread', 'burst', 'mega'].forEach(cd => { if (cooldowns[cd] > 0) cooldowns[cd] -= delta; });
     
-    // Update UI
-    ['spread', 'burst', 'mega'].forEach(id => {
+    // Update UI (dim a button while its cooldown is running)
+    ['attack', 'spread', 'burst', 'mega'].forEach(id => {
         const btn = document.getElementById(`btn-${id}`);
         if (btn) btn.style.opacity = cooldowns[id] > 0 ? '0.5' : '1';
     });
