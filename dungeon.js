@@ -14,18 +14,20 @@ let gates = {};           // hub doorway barriers, keyed by the room they guard
 const roomData = {
     center: { x: 0, z: 0, radius: 12 },
     north: { x: 0, z: -40, radius: 15 },    // Pillar boss
-    south: { x: 0, z: 40, radius: 10 },     // Combat room (antechamber of the south wing)
+    south: { x: 0, z: 40, radius: 17 },     // Antechamber of the south wing
     east: { x: 40, z: 0, radius: 8 },       // Archive
     west: { x: -40, z: 0, radius: 12 }      // Mini-boss
 };
 
-// The south "room" is actually a multi-chamber wing: an antechamber plus two
-// side chambers. They all roll up to the logical "south" room for the gate
-// progression; each spawns its own enemies on entry (see game.js).
+// The south "room" is a multi-chamber wing: a large antechamber plus two side
+// chambers. They roll up to the logical "south" room for the gate progression.
+// Enemies spawn at each chamber's far side (spawnX/spawnZ) — away from the
+// doorway the player enters by — so the player enters into open space and can
+// see them across the room before they close in.
 const southChambers = {
-    ante:  { x: 0,   z: 40, radius: 10 },
-    left:  { x: -26, z: 40, radius: 9 },
-    right: { x: 26,  z: 40, radius: 9 }
+    ante:  { x: 0,   z: 40, radius: 17, spawnX: 0,   spawnZ: 49 },
+    left:  { x: -44, z: 40, radius: 16, spawnX: -52, spawnZ: 40 },
+    right: { x: 44,  z: 40, radius: 16, spawnX: 52,  spawnZ: 40 }
 };
 export function getSouthChambers() { return southChambers; }
 
@@ -95,7 +97,7 @@ export function loadFloor(floor) {
     // overlap into both so the floors join). Centre edge is at ±12; the outer
     // room edges are at z=-25 (N), z=30 (S), x=32 (E), x=-28 (W).
     createHallway(0, -10, 0, -27, theme);   // Center <-> North
-    createHallway(0, 10, 0, 32, theme);     // Center <-> South
+    createHallway(0, 10, 0, 25, theme);     // Center <-> South
     createHallway(10, 0, 34, 0, theme);     // Center <-> East
     createHallway(-10, 0, -30, 0, theme);   // Center <-> West
     
@@ -419,8 +421,8 @@ function createSouthRoom(theme) {
     addChamberPillars(C.right.x, C.right.z, theme, [[3,-3],[3,3]]);
     
     // Connecting halls (overlap into both rooms at each end).
-    createHallway(-8, 40, -19, 40, theme);   // antechamber <-> left
-    createHallway(8, 40, 19, 40, theme);     // antechamber <-> right
+    createHallway(-15, 40, -30, 40, theme);   // antechamber <-> left
+    createHallway(15, 40, 30, 40, theme);     // antechamber <-> right
 }
 
 function makeChamberFloor(cx, cz, radius, theme) {
