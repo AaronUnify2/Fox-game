@@ -14,10 +14,20 @@ let gates = {};           // hub doorway barriers, keyed by the room they guard
 const roomData = {
     center: { x: 0, z: 0, radius: 12 },
     north: { x: 0, z: -40, radius: 15 },    // Pillar boss
-    south: { x: 0, z: 40, radius: 10 },     // Combat room
+    south: { x: 0, z: 40, radius: 10 },     // Combat room (antechamber of the south wing)
     east: { x: 40, z: 0, radius: 8 },       // Archive
     west: { x: -40, z: 0, radius: 12 }      // Mini-boss
 };
+
+// The south "room" is actually a multi-chamber wing: an antechamber plus two
+// side chambers. They all roll up to the logical "south" room for the gate
+// progression; each spawns its own enemies on entry (see game.js).
+const southChambers = {
+    ante:  { x: 0,   z: 40, radius: 10 },
+    left:  { x: -26, z: 40, radius: 9 },
+    right: { x: 26,  z: 40, radius: 9 }
+};
+export function getSouthChambers() { return southChambers; }
 
 // ============================================
 // INITIALIZATION
@@ -388,33 +398,49 @@ function createNorthRoom(theme, floor) {
 }
 
 function createSouthRoom(theme) {
-    const room = roomData.south;
+    const C = southChambers;
     
-    // Floor
-    const floorGeom = new THREE.CircleGeometry(room.radius, 24);
-    const floorMat = new THREE.MeshStandardMaterial({
-        color: theme.floorColor,
-        roughness: 0.85
-    });
-    const floor = new THREE.Mesh(floorGeom, floorMat);
+    // Antechamber (the wing's hub). Openings face the center hub, the left
+    // chamber, and the right chamber. Its ceiling comes from the loadFloor pass.
+    makeChamberFloor(C.ante.x, C.ante.z, C.ante.radius, theme);
+    createRingWalls(C.ante.x, C.ante.z, C.ante.radius, theme, [-Math.PI/2, 0, Math.PI]);
+    addChamberPillars(C.ante.x, C.ante.z, theme, [[-5,-3],[5,-3],[-5,3],[5,3]]);
+    
+    // Left side chamber — door faces the antechamber (+x).
+    makeChamberFloor(C.left.x, C.left.z, C.left.radius, theme);
+    createRingWalls(C.left.x, C.left.z, C.left.radius, theme, [0]);
+    addRoomCeiling(C.left.x, C.left.z, C.left.radius, theme, false);
+    addChamberPillars(C.left.x, C.left.z, theme, [[-3,-3],[-3,3]]);
+    
+    // Right side chamber — door faces the antechamber (-x).
+    makeChamberFloor(C.right.x, C.right.z, C.right.radius, theme);
+    createRingWalls(C.right.x, C.right.z, C.right.radius, theme, [Math.PI]);
+    addRoomCeiling(C.right.x, C.right.z, C.right.radius, theme, false);
+    addChamberPillars(C.right.x, C.right.z, theme, [[3,-3],[3,3]]);
+    
+    // Connecting halls (overlap into both rooms at each end).
+    createHallway(-8, 40, -19, 40, theme);   // antechamber <-> left
+    createHallway(8, 40, 19, 40, theme);     // antechamber <-> right
+}
+
+function makeChamberFloor(cx, cz, radius, theme) {
+    const floor = new THREE.Mesh(
+        new THREE.CircleGeometry(radius, 24),
+        new THREE.MeshStandardMaterial({ color: theme.floorColor, roughness: 0.85 })
+    );
     floor.rotation.x = -Math.PI / 2;
-    floor.position.set(room.x, 0, room.z);
+    floor.position.set(cx, 0, cz);
     floor.receiveShadow = true;
     dungeonScene.add(floor);
-    
-    // Walls
-    createRingWalls(room.x, room.z, room.radius, theme, [-Math.PI/2]); // door faces center (north)
-    
-    // Pillars for cover
-    const pillarPositions = [
-        [-5, -3], [5, -3], [-5, 3], [5, 3]
-    ];
-    pillarPositions.forEach(([px, pz]) => {
+}
+
+function addChamberPillars(cx, cz, theme, offsets) {
+    offsets.forEach(([px, pz]) => {
         const pillar = new THREE.Mesh(
             new THREE.CylinderGeometry(0.5, 0.6, 4, 8),
             new THREE.MeshStandardMaterial({ color: theme.wallColor, roughness: 0.7 })
         );
-        pillar.position.set(room.x + px, 2, room.z + pz);
+        pillar.position.set(cx + px, 2, cz + pz);
         pillar.castShadow = true;
         pillar.userData = { isWall: true };
         dungeonScene.add(pillar);
