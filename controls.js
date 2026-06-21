@@ -17,6 +17,7 @@ const inputState = {
     moveZ: 0,
     jump: false,
     attack: false,
+    sword: false,
     ability1: false,
     ability2: false,
     ability3: false,
@@ -324,6 +325,19 @@ function setupButtons() {
         }, { passive: false });
     }
     
+    // Sword button (melee)
+    const swordBtn = document.getElementById('btn-sword');
+    if (swordBtn) {
+        swordBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            inputState.sword = true;
+        }, { passive: false });
+        swordBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            inputState.sword = false;
+        }, { passive: false });
+    }
+    
     // Ability buttons
     ['spread', 'burst', 'mega'].forEach((ability, index) => {
         const btn = document.getElementById(`btn-${ability}`);
@@ -437,6 +451,7 @@ function setupKeyboard() {
         if (e.code === 'KeyJ' || e.code === 'Enter') {
             inputState.attack = true;
         }
+        if (e.code === 'KeyK') inputState.sword = true;
         if (e.code === 'Digit1') inputState.ability1 = true;
         if (e.code === 'Digit2') inputState.ability2 = true;
         if (e.code === 'Digit3') inputState.ability3 = true;
@@ -450,6 +465,7 @@ function setupKeyboard() {
         
         if (e.code === 'Space') inputState.jump = false;
         if (e.code === 'KeyJ' || e.code === 'Enter') inputState.attack = false;
+        if (e.code === 'KeyK') inputState.sword = false;
         if (e.code === 'Digit1') inputState.ability1 = false;
         if (e.code === 'Digit2') inputState.ability2 = false;
         if (e.code === 'Digit3') inputState.ability3 = false;
