@@ -4,10 +4,10 @@
 // ============================================
 
 import * as THREE from 'three';
-import { initDungeon, getDungeonScene, loadFloor, getRoomData, getCurrentFloor, setCurrentFloor, disposeDungeon, updateRotatingRings } from './dungeon.js';
+import { initDungeon, getDungeonScene, loadFloor, getRoomData, getCurrentFloor, setCurrentFloor, disposeDungeon, updateRotatingRings, openGate } from './dungeon.js';
 import { initTown, getTownScene, disposeTown, showNPCDialogue, setNPCInteractionCallback } from './town.js';
 import { initControls, updateControls, getInputState, resetInput, setCameraTarget, setCameraMode, setFPSLook, addFPSYaw } from './controls.js';
-import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, setGameBridge, getCarryYawDelta } from './entities.js';
+import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, getEnemies, getPillarBoss, setGameBridge, getCarryYawDelta } from './entities.js';
 
 // ============================================
 // GAME STATE
@@ -150,6 +150,7 @@ function animate() {
             if (cy !== 0) addFPSYaw(cy);
             
             checkRoomTransitions();
+            checkRoomClear();
             checkPlayerDeath();
         }
         
@@ -266,6 +267,7 @@ export function enterDungeon(floor = null) {
 
 let currentRoom = 'center';
 let roomsCleared = { center: false, north: false, south: false, east: false, west: false };
+let roomSpawned = { center: false, north: false, south: false, east: false, west: false };
 
 function checkRoomTransitions() {
     const player = getPlayer();
@@ -293,26 +295,44 @@ function enterRoom(roomName) {
     const prevRoom = currentRoom;
     currentRoom = roomName;
     
-    // Spawn enemies if room not cleared
-    if (!roomsCleared[roomName]) {
+    // Spawn enemies if room not yet cleared and not already populated
+    if (!roomsCleared[roomName] && !roomSpawned[roomName]) {
         const floor = getCurrentFloor();
         
         if (roomName === 'west') {
             // Mini-boss room
             spawnMiniBoss(floor);
+            roomSpawned.west = true;
             showNotification('MINI-BOSS: ' + getBossName(floor));
         } else if (roomName === 'north') {
             // Pillar boss room
             spawnPillarBoss(floor);
+            roomSpawned.north = true;
             showNotification('THE CORE AWAKENS');
         } else if (roomName === 'east') {
             // Archive room - show lore
             showArchiveLore(floor);
+            roomSpawned.east = true;
         } else if (roomName === 'south') {
             // Standard combat room
             spawnEnemiesForRoom(roomName, floor);
+            roomSpawned.south = true;
         }
     }
+}
+
+// Called every frame in the dungeon: once a room's content is defeated, mark it
+// cleared (which opens the next gate). East/terminal clears via its dialogue.
+function checkRoomClear() {
+    const r = currentRoom;
+    if (!r || roomsCleared[r] || !roomSpawned[r]) return;
+    
+    let done = false;
+    if (r === 'south') done = getEnemies().length === 0;
+    else if (r === 'west') done = getBoss() === null;
+    else if (r === 'north') done = getPillarBoss() === null;
+    
+    if (done) roomCleared(r);
 }
 
 function getBossName(floor) {
@@ -323,13 +343,21 @@ function getBossName(floor) {
 }
 
 export function roomCleared(roomName) {
+    if (roomsCleared[roomName]) return;     // guard against double-fire
     roomsCleared[roomName] = true;
     
-    const floor = getCurrentFloor();
-    
-    // Check if pillar boss defeated
-    if (roomName === 'north') {
-        // Floor complete!
+    // Unlock the next room on the floor's path: south -> west -> north -> east.
+    if (roomName === 'south') {
+        openGate('west');
+        showNotification('THE WEST GATE OPENS');
+    } else if (roomName === 'west') {
+        openGate('north');
+        showNotification('THE CORE GATE OPENS');
+    } else if (roomName === 'north') {
+        openGate('east');
+        showNotification('THE ARCHIVE GATE OPENS');
+    } else if (roomName === 'east') {
+        // Terminal read — the floor is complete.
         floorComplete();
     }
 }
@@ -383,6 +411,7 @@ export function nextFloor() {
     // Reset room states
     currentRoom = 'center';
     roomsCleared = { center: false, north: false, south: false, east: false, west: false };
+    roomSpawned = { center: false, north: false, south: false, east: false, west: false };
     
     enterDungeon(floor);
 }
@@ -440,6 +469,7 @@ function playerDied() {
     // Reset floor progress
     currentRoom = 'center';
     roomsCleared = { center: false, north: false, south: false, east: false, west: false };
+    roomSpawned = { center: false, north: false, south: false, east: false, west: false };
 }
 
 export function retryFloor() {
@@ -646,7 +676,7 @@ function showArchiveLore(floor) {
     const text = lore[Math.floor(Math.random() * lore.length)];
     
     showDialogue('ARCHIVE TERMINAL', text, () => {
-        roomsCleared['east'] = true;
+        roomCleared('east');
     });
 }
 
@@ -912,6 +942,7 @@ export function selectFloor(floor) {
     // Reset room states
     currentRoom = 'center';
     roomsCleared = { center: false, north: false, south: false, east: false, west: false };
+    roomSpawned = { center: false, north: false, south: false, east: false, west: false };
     
     enterDungeon(floor);
 }
