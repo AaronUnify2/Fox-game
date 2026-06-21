@@ -1412,6 +1412,7 @@ function destroyBoss() {
 }
 
 export function getBoss() { return currentBoss; }
+export function getPillarBoss() { return pillarBoss; }
 export function disposeBosses() {
     const scene = getDungeonScene();
     if (currentBoss) {
