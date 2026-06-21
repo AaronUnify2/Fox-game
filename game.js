@@ -255,8 +255,7 @@ export function enterDungeon(floor = null) {
     setCameraMode('fps');
     setFPSLook(0); // first-person, facing +Z (toward the south room) on entry
     
-    // Spawn initial enemies
-    spawnEnemiesForRoom('center', getCurrentFloor(), true);
+    // The center hub stays clear of enemies — it's a safe staging room.
     
     updateUI();
 }
