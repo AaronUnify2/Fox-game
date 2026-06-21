@@ -279,10 +279,19 @@ canvas {
     position: absolute;
     right: 20px;
     bottom: 20px;
-    display: flex;
-    gap: 15px;
+    display: grid;
+    grid-template-columns: 90px 90px;
+    grid-template-rows: 90px 90px;
+    gap: 14px;
+    align-items: end;
+    justify-items: center;
     z-index: 20;
 }
+
+/* L-shape: magic in the corner, sword to its left, jump directly above magic */
+#btn-attack { grid-column: 2; grid-row: 2; }
+#btn-sword  { grid-column: 1; grid-row: 2; }
+#btn-jump   { grid-column: 2; grid-row: 1; }
 
 .action-btn {
     width: 80px;
@@ -311,6 +320,17 @@ canvas {
 
 .attack-btn:active {
     background: rgba(255,102,68,0.3);
+}
+
+.sword-btn {
+    width: 90px;
+    height: 90px;
+    border-color: #ccd8e6;
+    color: #ccd8e6;
+}
+
+.sword-btn:active {
+    background: rgba(204,216,230,0.3);
 }
 
 /* ============================================
@@ -698,6 +718,11 @@ canvas {
     }
     
     .attack-btn {
+        width: 75px;
+        height: 75px;
+    }
+    
+    .sword-btn {
         width: 75px;
         height: 75px;
     }
