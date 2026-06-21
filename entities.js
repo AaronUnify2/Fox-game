@@ -34,8 +34,8 @@ let pillarBoss = null;
 let xpGained = 0;
 
 // Cooldowns
-const cooldowns = { attack: 0, spread: 0, burst: 0, mega: 0 };
-const baseCooldowns = { attack: 1.0, spread: 8, burst: 15, mega: 20 };  // attack = the magic-shot cooldown. Combo rhythm: open with magic, finish with sword. Tune up once melee lands.
+const cooldowns = { attack: 0, spread: 0, burst: 0, mega: 0, sword: 0 };
+const baseCooldowns = { attack: 1.0, spread: 8, burst: 15, mega: 20, sword: 0.45 };  // attack = magic-shot cooldown; sword = melee swing cooldown
 let burstModeActive = false;
 let burstModeTimer = 0;
 let aimPitch = 0; // vertical aim angle from the camera look (FPS); 0 = level
@@ -239,6 +239,7 @@ function updatePlayer(delta, inputState) {
     // Combat
     updateCooldowns(delta);
     if (attack) fireBasicAttack();
+    if (inputState.sword) fireSwordAttack();
     if (inputState.ability1 && gameBridge.hasAbility('spread') && cooldowns.spread <= 0) fireSpreadAttack();
     if (inputState.ability2 && gameBridge.hasAbility('burst') && cooldowns.burst <= 0) activateBurstMode();
     if (inputState.ability3 && gameBridge.hasAbility('mega') && cooldowns.mega <= 0) fireMegaBall();
@@ -416,10 +417,10 @@ function checkWallCollision() {
 
 function updateCooldowns(delta) {
     const cdMod = 1 - (gameBridge.getUpgradeLevel('cooldownReduction') * 0.08);
-    ['attack', 'spread', 'burst', 'mega'].forEach(cd => { if (cooldowns[cd] > 0) cooldowns[cd] -= delta; });
+    ['attack', 'spread', 'burst', 'mega', 'sword'].forEach(cd => { if (cooldowns[cd] > 0) cooldowns[cd] -= delta; });
     
     // Update UI (dim a button while its cooldown is running)
-    ['attack', 'spread', 'burst', 'mega'].forEach(id => {
+    ['attack', 'spread', 'burst', 'mega', 'sword'].forEach(id => {
         const btn = document.getElementById(`btn-${id}`);
         if (btn) btn.style.opacity = cooldowns[id] > 0 ? '0.5' : '1';
     });
@@ -432,6 +433,48 @@ function fireBasicAttack() {
     if (cooldowns.attack > 0) return;
     cooldowns.attack = cd;
     createProjectile(player.position.clone(), player.rotation.y, 'basic');
+}
+
+// Melee swing: damages enemies/mini-boss in a short arc in front of the player.
+// Weak (base 7) until the King's sword lessons raise 'swordDamage'. The combo
+// rhythm: open with magic on cooldown, finish with the sword.
+function fireSwordAttack() {
+    if (cooldowns.sword > 0) return;
+    cooldowns.sword = baseCooldowns.sword;
+    
+    const reach = 2.8;
+    const dotThreshold = Math.cos(0.95);   // ~55 deg half-arc swing
+    const dmg = 7 + (gameBridge.getUpgradeLevel('swordDamage') || 0) * 4;
+    
+    const px = player.position.x, pz = player.position.z;
+    const fx = Math.sin(player.rotation.y), fz = Math.cos(player.rotation.y);
+    const inArc = (ox, oz, pad) => {
+        const dist = Math.hypot(ox, oz);
+        if (dist > reach + pad) return false;
+        if (dist < 0.001) return true;
+        return (ox * fx + oz * fz) / dist >= dotThreshold;
+    };
+    
+    // Regular enemies — iterate backwards since damageEnemy may remove on death
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (inArc(e.position.x - px, e.position.z - pz, e.userData.radius || 0.5)) {
+            damageEnemy(e, dmg);
+        }
+    }
+    // Mini-boss
+    if (currentBoss && inArc(currentBoss.position.x - px, currentBoss.position.z - pz, 1.6)) {
+        damageBoss(currentBoss, dmg);
+    }
+    
+    swingEffect();
+}
+
+function swingEffect() {
+    const fx = Math.sin(player.rotation.y), fz = Math.cos(player.rotation.y);
+    const p = player.position.clone();
+    p.x += fx * 1.8; p.z += fz * 1.8; p.y += 1.0;
+    createHitEffect(p, 0xbfe0ff);   // pale steel flash where the blade lands
 }
 
 function fireSpreadAttack() {
