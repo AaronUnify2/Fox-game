@@ -248,14 +248,15 @@ export function enterDungeon(floor = null) {
     const player = getPlayer();
     const centerRoom = getRoomData('center');
     if (player && centerRoom) {
-        // Spawn just off the central pillar (now solid), facing it and the room.
-        player.position.set(centerRoom.x, 0, centerRoom.z - 5);
+        // Spawn on the south side of the central pillar, facing south down the
+        // hallway toward the first objective (the pillar is now behind the player).
+        player.position.set(centerRoom.x, 0, centerRoom.z + 5);
         currentScene.add(player);
     }
     
     setCameraTarget(player);
     setCameraMode('fps');
-    setFPSLook(0); // first-person, facing +Z (toward the south room) on entry
+    setFPSLook(0); // first-person, facing +Z (south, down the hallway to the south wing)
     
     // The center hub stays clear of enemies — it's a safe staging room.
     
@@ -351,7 +352,7 @@ function checkSouthChambers() {
         const c = chambers[name];
         const dist = Math.hypot(player.position.x - c.x, player.position.z - c.z);
         if (dist < c.radius) {
-            spawnEnemiesAt(c.x, c.z, floor, 3 + Math.floor(floor / 3));
+            spawnEnemiesAt(c.spawnX, c.spawnZ, floor, 3 + Math.floor(floor / 3));
             southSpawned[name] = true;
             if (name !== 'ante') showNotification('CHAMBER BREACHED');
         }
