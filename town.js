@@ -17,7 +17,7 @@ let npcs = [];
 let interactableNPC = null;
 
 // Obelisk (dungeon entrance) — placed in the NE corner so the town has room.
-const OBELISK_POS = { x: 20, z: -16 };
+const OBELISK_POS = { x: 0, z: -16 };   // north-central monument (end of the gate->commons axis)
 const COMMONS = { x: 0, z: 2 };   // social heart of the outpost; paths meet here
 
 // rotation.y so an object's local +Z (its front/door) points at a target
@@ -214,9 +214,9 @@ function createPeak() {
     cap.position.set(30, 35, -30);
     townScene.add(cap);
     
-    // Shoulder rock the obelisk emerges from (ties grass to peak)
-    const mound = new THREE.Mesh(new THREE.ConeGeometry(9, 7, 6), rockMat);
-    mound.position.set(OBELISK_POS.x, 1, OBELISK_POS.z);
+    // Low stone dais the obelisk rises from at the town's north-centre
+    const mound = new THREE.Mesh(new THREE.ConeGeometry(3.5, 2, 8), rockMat);
+    mound.position.set(OBELISK_POS.x, 0.5, OBELISK_POS.z);
     mound.castShadow = true;
     townScene.add(mound);
     
@@ -385,7 +385,7 @@ function createGround() {
     const DIRT = 0x55493a;
     createRoad(0, 12, 6, 22, DIRT);              // gate -> commons
     createRoad(0, -8, 6, 22, DIRT);              // commons -> north work yard
-    createRoad(10, -16, 24, 5, DIRT);            // yard -> obelisk (E spur)
+    createRoad(OBELISK_POS.x, OBELISK_POS.z, 9, 9, DIRT);  // obelisk plaza
     createRoad(-6, 18, 10, 4, DIRT);             // spur to the caravan ground
     
     // Trodden earth in front of each building (where folk stand)
@@ -403,7 +403,7 @@ function createGround() {
         const t = i / 5;
         const rune = new THREE.Mesh(new THREE.CircleGeometry(0.45, 6), runeMat);
         rune.rotation.x = -Math.PI / 2;
-        rune.position.set(2 + t * (OBELISK_POS.x - 2), 0.02, -16 + t * (OBELISK_POS.z + 16));
+        rune.position.set(t * OBELISK_POS.x, 0.02, -2 + t * (OBELISK_POS.z + 2));
         townScene.add(rune);
     }
 }
