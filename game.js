@@ -947,13 +947,15 @@ export function confirmDelete() {
 
 export function showFloorSelect() {
     const menu = document.getElementById('floor-select');
-    const highest = gameData.progress.highestFloor;
+    const completed = gameData.progress.floorsCompleted;
+    const maxCompleted = completed.length ? Math.max(...completed) : 0;
+    const maxAccessible = Math.min(maxCompleted + 1, 10);   // next floor after the highest cleared
     
     let buttons = '';
-    for (let i = 1; i <= Math.min(highest, 10); i++) {
-        const completed = gameData.progress.floorsCompleted.includes(i);
+    for (let i = 1; i <= maxAccessible; i++) {
+        const isDone = completed.includes(i);
         buttons += `<button onclick="window.gameAPI.selectFloor(${i})">
-            Floor ${i} ${completed ? '✓' : ''}
+            Floor ${i} ${isDone ? '✓' : ''}
         </button>`;
     }
     
