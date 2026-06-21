@@ -32,6 +32,8 @@ let enemyProjectiles = [];
 let currentBoss = null;
 let pillarBoss = null;
 let xpGained = 0;
+let goldGained = 0;
+let orbs = [];          // collectible XP / gold orbs
 
 // Cooldowns
 const cooldowns = { attack: 0, spread: 0, burst: 0, mega: 0, sword: 0 };
@@ -907,12 +909,85 @@ function destroyEnemy(enemy, index, giveXP) {
     
     if (giveXP) {
         const xpVals = { drone: 15, walker: 20, turret: 18, wisp: 12 };
-        xpGained += xpVals[enemy.userData.type] || 10;
+        const goldVals = { drone: 3, walker: 4, turret: 4, wisp: 2 };
+        spawnOrbs(enemy.position, xpVals[enemy.userData.type] || 10, goldVals[enemy.userData.type] || 2);
     }
     
     createHitEffect(enemy.position.clone(), 0xff8800);
     scene.remove(enemy);
     enemies.splice(index, 1);
+}
+
+// ---- XP / Gold orbs ----
+// Kills drop orbs that magnet to the player and add to the floor's haul
+// (xpGained / goldGained). The haul banks on floor completion and is lost on
+// death — so collecting is part of the floor's risk/reward.
+function spawnOrbs(position, xpTotal, goldTotal) {
+    const scene = getDungeonScene();
+    if (!scene) return;
+    
+    const drop = (total, count, color, isGold) => {
+        const base = Math.floor(total / count);
+        let rem = total - base * count;
+        for (let i = 0; i < count; i++) {
+            const value = base + (rem-- > 0 ? 1 : 0);
+            if (value <= 0) continue;
+            const orb = new THREE.Mesh(
+                new THREE.IcosahedronGeometry(isGold ? 0.3 : 0.24, 0),
+                new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.9, metalness: 0.4, roughness: 0.3 })
+            );
+            const a = Math.random() * Math.PI * 2;
+            const r = 0.3 + Math.random() * 1.1;
+            orb.position.set(position.x + Math.cos(a) * r, 1.0 + Math.random() * 0.5, position.z + Math.sin(a) * r);
+            orb.userData = { isGold, value, vy: 3 + Math.random() * 2.5, spin: (Math.random() - 0.5) * 5 };
+            scene.add(orb);
+            orbs.push(orb);
+        }
+    };
+    if (xpTotal > 0) drop(xpTotal, 2, 0x33ddaa, false);    // XP = teal
+    if (goldTotal > 0) drop(goldTotal, 1, 0xffcc33, true);  // gold = amber
+}
+
+function updateOrbs(delta) {
+    if (!player) return;
+    const scene = getDungeonScene();
+    const MAGNET = 6, COLLECT = 1.3;
+    for (let i = orbs.length - 1; i >= 0; i--) {
+        const orb = orbs[i];
+        const d = orb.userData;
+        orb.rotation.y += d.spin * delta;
+        
+        // little pop on spawn, then hover
+        d.vy -= 10 * delta;
+        orb.position.y += d.vy * delta;
+        if (orb.position.y < 0.7) { orb.position.y = 0.7; d.vy = 0; }
+        
+        const dx = player.position.x - orb.position.x;
+        const dz = player.position.z - orb.position.z;
+        const dist = Math.hypot(dx, dz);
+        
+        if (dist < MAGNET) {
+            const pull = (1 - dist / MAGNET) * 24 + 5;
+            const inv = 1 / (dist || 1);
+            orb.position.x += dx * inv * pull * delta;
+            orb.position.z += dz * inv * pull * delta;
+        }
+        
+        if (dist < COLLECT) {
+            if (d.isGold) goldGained += d.value; else xpGained += d.value;
+            createHitEffect(orb.position.clone(), d.isGold ? 0xffcc33 : 0x33ddaa);
+            scene?.remove(orb);
+            orb.geometry.dispose();
+            orb.material.dispose();
+            orbs.splice(i, 1);
+        }
+    }
+}
+
+function clearOrbs() {
+    const scene = getDungeonScene();
+    orbs.forEach(o => { scene?.remove(o); o.geometry.dispose(); o.material.dispose(); });
+    orbs = [];
 }
 
 export function spawnEnemiesForRoom(roomType, floor, reduced = false) {
@@ -948,6 +1023,7 @@ export function clearAllEnemies() {
     projectiles = [];
     enemyProjectiles.forEach(p => scene?.remove(p));
     enemyProjectiles = [];
+    clearOrbs();
 }
 
 export function getEnemies() { return enemies; }
@@ -1413,7 +1489,8 @@ function destroyBoss() {
     const scene = getDungeonScene();
     if (!currentBoss) return;
     const xpVals = { sentinel: 100, hollow: 150, dreamer: 200, emperor: 500 };
-    xpGained += xpVals[currentBoss.userData.type] || 100;
+    const bossXP = xpVals[currentBoss.userData.type] || 100;
+    spawnOrbs(currentBoss.position, bossXP, Math.round(bossXP / 4));
     if (currentBoss.userData.drones) currentBoss.userData.drones.forEach(d => scene.remove(d));
     if (currentBoss.userData.mirrors) currentBoss.userData.mirrors.forEach(m => scene.remove(m));
     if (currentBoss.userData.zones) currentBoss.userData.zones.forEach(z => scene.remove(z));
@@ -1592,10 +1669,10 @@ function damagePillarNode(node, damage) {
         node.userData.active = false;
         node.visible = false;
         createHitEffect(node.getWorldPosition(new THREE.Vector3()), pillarBoss.userData.glowColor);
-        xpGained += 30;
+        spawnOrbs(node.getWorldPosition(new THREE.Vector3()), 30, 5);
         
         if (pillarBoss.userData.weakSpots.filter(n => n.userData.active).length === 0) {
-            xpGained += 200 + pillarBoss.userData.floor * 30;
+            spawnOrbs(pillarBoss.position, 200 + pillarBoss.userData.floor * 30, 50);
             for (let i = 0; i < 20; i++) {
                 setTimeout(() => {
                     const pos = pillarBoss.position.clone();
@@ -1663,6 +1740,8 @@ export function isPlayerDead() {
 
 export function getXPGained() { return xpGained; }
 export function resetXPGained() { xpGained = 0; }
+export function getGoldGained() { return goldGained; }
+export function resetGoldGained() { goldGained = 0; }
 
 // ============================================
 // MAIN UPDATE
@@ -1673,6 +1752,7 @@ export function updateEntities(delta, gameData, inputState) {
     updateProjectiles(delta);
     updateEnemyProjectiles(delta);
     updateEnemies(delta);
+    updateOrbs(delta);
     updateBoss(delta);
     updatePillarBoss(delta);
 }
