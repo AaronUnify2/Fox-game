@@ -8,6 +8,7 @@ import * as THREE from 'three';
 let dungeonScene;
 let currentFloor = 1;
 let rotatingRings = [];   // north-room arc platforms (the rotating climb)
+let gates = {};           // hub doorway barriers, keyed by the room they guard
 
 // Room layout data
 const roomData = {
@@ -45,6 +46,7 @@ export function getRoomData(roomName) {
 
 export function disposeDungeon() {
     rotatingRings = [];
+    gates = {};
     // Clear scene
     while (dungeonScene.children.length > 0) {
         dungeonScene.remove(dungeonScene.children[0]);
@@ -97,6 +99,77 @@ export function loadFloor(floor) {
     
     // Add decorations
     createDecorations(theme, floor);
+    
+    // Locked gates at the hub doorways (south is open; the rest unlock in order)
+    createGates(theme);
+}
+
+// ============================================
+// GATES — per-floor unlock progression
+// ============================================
+// Barriers seal the west, north and east doorways of the central hub. South is
+// open from the start. As each room is cleared the next gate is opened (see
+// roomCleared in game.js): south -> west -> north -> east(terminal).
+
+function createGates(theme) {
+    gates = {};
+    const H = 18;       // near corridor height; collision is 2D so jumping can't bypass
+    const T = 0.7;      // thickness across the doorway
+    const W = 8;        // span (covers the 6-wide corridor + doorway gap)
+    
+    // Each gate sits in the throat of its doorway. spanX gates are wide along X
+    // (north/south corridors); the others are wide along Z (east/west corridors).
+    const defs = {
+        west:  { x: -11, z: 0,   spanX: false },
+        north: { x: 0,   z: -11, spanX: true  },
+        east:  { x: 11,  z: 0,   spanX: false }
+    };
+    
+    for (const [room, d] of Object.entries(defs)) {
+        const geom = d.spanX
+            ? new THREE.BoxGeometry(W, H, T)
+            : new THREE.BoxGeometry(T, H, W);
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0x2a4a66,
+            emissive: 0x33ccff,
+            emissiveIntensity: 0.6,
+            metalness: 0.5,
+            roughness: 0.4,
+            transparent: true,
+            opacity: 0.45
+        });
+        const gate = new THREE.Mesh(geom, mat);
+        gate.position.set(d.x, H / 2, d.z);
+        gate.userData.isWall = true;     // blocks the player while closed
+        gate.userData.isGate = true;
+        gate.userData.room = room;
+        dungeonScene.add(gate);
+        gates[room] = gate;
+    }
+}
+
+// Open a gate: drop its collision immediately, then dissolve the barrier.
+export function openGate(roomName) {
+    const gate = gates[roomName];
+    if (!gate) return;
+    gate.userData.isWall = false;        // passable the instant it opens
+    delete gates[roomName];
+    
+    const mat = gate.material;
+    const start = performance.now();
+    const dur = 800;
+    const tick = () => {
+        if (!gate.parent) return;        // floor was disposed mid-animation
+        const t = Math.min(1, (performance.now() - start) / dur);
+        mat.opacity = 0.45 * (1 - t);
+        gate.position.y += 0.05;         // lifts away as it fades
+        if (t < 1) {
+            requestAnimationFrame(tick);
+        } else {
+            gate.parent.remove(gate);
+        }
+    };
+    requestAnimationFrame(tick);
 }
 
 // ============================================
