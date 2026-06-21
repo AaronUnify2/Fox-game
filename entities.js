@@ -325,7 +325,7 @@ function carryOnRing() {
 }
 
 function checkWallCollision() {
-    const scene = getDungeonScene();
+    const scene = player.parent;   // the scene the player is currently in (town or dungeon)
     if (!scene) return;
 
     player.userData.canWallJump = false;
