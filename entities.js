@@ -327,50 +327,51 @@ function carryOnRing() {
     }
 }
 
-function checkWallCollision() {
-    const scene = player.parent;   // the scene the player is currently in (town or dungeon)
-    if (!scene) return;
+// Collect the solid (isWall) meshes in a scene once per frame, so several
+// entities can be resolved against them without re-traversing per entity.
+function collectWalls(scene) {
+    const walls = [];
+    if (!scene) return walls;
+    scene.traverse(o => {
+        if (o.isMesh && o.userData?.isWall && o.geometry?.parameters) walls.push(o);
+    });
+    return walls;
+}
 
-    player.userData.canWallJump = false;
-    const r = player.userData.radius;
-    const px = player.position.x, pz = player.position.z;
-
-    scene.traverse(obj => {
-        if (!obj.isMesh || !obj.userData?.isWall || !obj.geometry?.parameters) return;
+// Eject a circle (radius, in XZ) at `pos` out of every wall it overlaps.
+// Mutates pos.x / pos.z and returns the last contact normal (or null). Shared
+// by the player and the enemies so both respect the same geometry.
+function ejectFromWalls(pos, radius, walls) {
+    let normal = null;
+    for (const obj of walls) {
+        if (!obj.userData?.isWall) continue;   // e.g. a gate that has since opened
         const g = obj.geometry.parameters;
+        const px = pos.x, pz = pos.z;
 
         // Cylindrical pillars: circle-vs-circle in XZ.
         if (g.radiusTop !== undefined || g.radiusBottom !== undefined) {
             const pr = Math.max(g.radiusTop || 0, g.radiusBottom || 0);
             let dx = px - obj.position.x, dz = pz - obj.position.z;
             let dist = Math.hypot(dx, dz);
-            const minDist = pr + r;
+            const minDist = pr + radius;
             if (dist < minDist) {
                 if (dist < 1e-4) { dx = 1; dz = 0; dist = 1e-4; }
                 const push = minDist - dist;
-                player.position.x += (dx / dist) * push;
-                player.position.z += (dz / dist) * push;
-                if (!player.userData.onGround) {
-                    player.userData.canWallJump = true;
-                    player.userData.lastWallNormal = new THREE.Vector3(dx / dist, 0, dz / dist);
-                }
+                pos.x += (dx / dist) * push;
+                pos.z += (dz / dist) * push;
+                normal = { x: dx / dist, z: dz / dist };
             }
-            return;
+            continue;
         }
 
-        // Box walls: oriented-box vs circle (handles rotated walls AND the
-        // case where the player center is already inside the wall -> eject).
-        const hw = (g.width || 0) / 2;
-        const hd = (g.depth || 0) / 2;
-        if (hw === 0 || hd === 0) return;
-
+        // Box walls: oriented-box vs circle (handles rotation and center-inside).
+        const hw = (g.width || 0) / 2, hd = (g.depth || 0) / 2;
+        if (hw === 0 || hd === 0) continue;
         const theta = obj.rotation.y;
         const cos = Math.cos(theta), sin = Math.sin(theta);
         const dx = px - obj.position.x, dz = pz - obj.position.z;
-        // world -> wall-local
         const lx = dx * cos - dz * sin;
         const lz = dx * sin + dz * cos;
-
         const cxp = Math.max(-hw, Math.min(lx, hw));
         const czp = Math.max(-hd, Math.min(lz, hd));
         const ox = lx - cxp, oz = lz - czp;
@@ -379,38 +380,37 @@ function checkWallCollision() {
         let pushLX = 0, pushLZ = 0, nlx = 0, nlz = 0, hit = false;
         if (d2 > 1e-8) {
             const dist = Math.sqrt(d2);
-            if (dist < r) {
-                const pen = r - dist;
+            if (dist < radius) {
+                const pen = radius - dist;
                 pushLX = (ox / dist) * pen; pushLZ = (oz / dist) * pen;
-                nlx = ox / dist; nlz = oz / dist;
-                hit = true;
+                nlx = ox / dist; nlz = oz / dist; hit = true;
             }
         } else {
-            // inside the box -> push out through the nearest face
-            const penX = hw - Math.abs(lx);
-            const penZ = hd - Math.abs(lz);
-            if (penX < penZ) {
-                const sgn = lx >= 0 ? 1 : -1;
-                pushLX = sgn * (penX + r); nlx = sgn;
-            } else {
-                const sgn = lz >= 0 ? 1 : -1;
-                pushLZ = sgn * (penZ + r); nlz = sgn;
-            }
+            // center inside the box -> push out through the nearest face
+            const penX = hw - Math.abs(lx), penZ = hd - Math.abs(lz);
+            if (penX < penZ) { const sgn = lx >= 0 ? 1 : -1; pushLX = sgn * (penX + radius); nlx = sgn; }
+            else { const sgn = lz >= 0 ? 1 : -1; pushLZ = sgn * (penZ + radius); nlz = sgn; }
             hit = true;
         }
 
         if (hit) {
-            // wall-local -> world
-            player.position.x += pushLX * cos + pushLZ * sin;
-            player.position.z += -pushLX * sin + pushLZ * cos;
-            if (!player.userData.onGround) {
-                player.userData.canWallJump = true;
-                player.userData.lastWallNormal = new THREE.Vector3(
-                    nlx * cos + nlz * sin, 0, -nlx * sin + nlz * cos
-                );
-            }
+            pos.x += pushLX * cos + pushLZ * sin;
+            pos.z += -pushLX * sin + pushLZ * cos;
+            normal = { x: nlx * cos + nlz * sin, z: -nlx * sin + nlz * cos };
         }
-    });
+    }
+    return normal;
+}
+
+function checkWallCollision() {
+    const scene = player.parent;   // the scene the player is currently in (town or dungeon)
+    if (!scene) return;
+    player.userData.canWallJump = false;
+    const normal = ejectFromWalls(player.position, player.userData.radius, collectWalls(scene));
+    if (normal && !player.userData.onGround) {
+        player.userData.canWallJump = true;
+        player.userData.lastWallNormal = new THREE.Vector3(normal.x, 0, normal.z);
+    }
 }
 
 // ============================================
@@ -749,6 +749,7 @@ function createEnemy(type, position, floor) {
 
 function updateEnemies(delta) {
     if (!player) return;
+    const walls = collectWalls(player.parent);
     
     for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
@@ -817,6 +818,9 @@ function updateEnemies(delta) {
             }
             e.position.y = 1 + Math.sin(Date.now() * 0.01) * 0.2;
         }
+        
+        // Respect walls: slide along them instead of clipping through.
+        ejectFromWalls(e.position, e.userData.radius || 0.6, walls);
     }
 }
 
