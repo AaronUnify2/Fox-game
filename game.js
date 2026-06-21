@@ -4,10 +4,10 @@
 // ============================================
 
 import * as THREE from 'three';
-import { initDungeon, getDungeonScene, loadFloor, getRoomData, getCurrentFloor, setCurrentFloor, disposeDungeon, updateRotatingRings, openGate } from './dungeon.js';
+import { initDungeon, getDungeonScene, loadFloor, getRoomData, getCurrentFloor, setCurrentFloor, disposeDungeon, updateRotatingRings, openGate, getSouthChambers } from './dungeon.js';
 import { initTown, getTownScene, disposeTown, showNPCDialogue, setNPCInteractionCallback } from './town.js';
 import { initControls, updateControls, getInputState, resetInput, setCameraTarget, setCameraMode, setFPSLook, addFPSYaw } from './controls.js';
-import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, getEnemies, getPillarBoss, setGameBridge, getCarryYawDelta } from './entities.js';
+import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, spawnEnemiesAt, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, getEnemies, getPillarBoss, setGameBridge, getCarryYawDelta } from './entities.js';
 
 // ============================================
 // GAME STATE
@@ -150,6 +150,7 @@ function animate() {
             if (cy !== 0) addFPSYaw(cy);
             
             checkRoomTransitions();
+            checkSouthChambers();
             checkRoomClear();
             checkPlayerDeath();
         }
@@ -268,6 +269,7 @@ export function enterDungeon(floor = null) {
 let currentRoom = 'center';
 let roomsCleared = { center: false, north: false, south: false, east: false, west: false };
 let roomSpawned = { center: false, north: false, south: false, east: false, west: false };
+let southSpawned = { ante: false, left: false, right: false };   // south wing sub-chambers
 
 function checkRoomTransitions() {
     const player = getPlayer();
@@ -314,9 +316,9 @@ function enterRoom(roomName) {
             showArchiveLore(floor);
             roomSpawned.east = true;
         } else if (roomName === 'south') {
-            // Standard combat room
-            spawnEnemiesForRoom(roomName, floor);
+            // Multi-chamber wing — each chamber spawns on entry (checkSouthChambers)
             roomSpawned.south = true;
+            showNotification('CLEAR THE SOUTH CHAMBERS');
         }
     }
 }
@@ -328,11 +330,32 @@ function checkRoomClear() {
     if (!r || roomsCleared[r] || !roomSpawned[r]) return;
     
     let done = false;
-    if (r === 'south') done = getEnemies().length === 0;
+    if (r === 'south') done = southSpawned.ante && southSpawned.left && southSpawned.right && getEnemies().length === 0;
     else if (r === 'west') done = getBoss() === null;
     else if (r === 'north') done = getPillarBoss() === null;
     
     if (done) roomCleared(r);
+}
+
+// While in the south wing, wake each chamber's enemies the first time the player
+// steps into it. The wing isn't cleared until all three chambers are swept.
+function checkSouthChambers() {
+    if (currentRoom !== 'south' || roomsCleared.south) return;
+    const player = getPlayer();
+    if (!player) return;
+    
+    const chambers = getSouthChambers();
+    const floor = getCurrentFloor();
+    for (const name in chambers) {
+        if (southSpawned[name]) continue;
+        const c = chambers[name];
+        const dist = Math.hypot(player.position.x - c.x, player.position.z - c.z);
+        if (dist < c.radius) {
+            spawnEnemiesAt(c.x, c.z, floor, 3 + Math.floor(floor / 3));
+            southSpawned[name] = true;
+            if (name !== 'ante') showNotification('CHAMBER BREACHED');
+        }
+    }
 }
 
 function getBossName(floor) {
@@ -412,6 +435,7 @@ export function nextFloor() {
     currentRoom = 'center';
     roomsCleared = { center: false, north: false, south: false, east: false, west: false };
     roomSpawned = { center: false, north: false, south: false, east: false, west: false };
+    southSpawned = { ante: false, left: false, right: false };
     
     enterDungeon(floor);
 }
@@ -470,6 +494,7 @@ function playerDied() {
     currentRoom = 'center';
     roomsCleared = { center: false, north: false, south: false, east: false, west: false };
     roomSpawned = { center: false, north: false, south: false, east: false, west: false };
+    southSpawned = { ante: false, left: false, right: false };
 }
 
 export function retryFloor() {
@@ -943,6 +968,7 @@ export function selectFloor(floor) {
     currentRoom = 'center';
     roomsCleared = { center: false, north: false, south: false, east: false, west: false };
     roomSpawned = { center: false, north: false, south: false, east: false, west: false };
+    southSpawned = { ante: false, left: false, right: false };
     
     enterDungeon(floor);
 }
