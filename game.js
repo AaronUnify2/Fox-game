@@ -8,6 +8,9 @@ import { initDungeon, getDungeonScene, loadFloor, getRoomData, getCurrentFloor, 
 import { initTown, getTownScene, disposeTown, showNPCDialogue, setNPCInteractionCallback } from './town.js';
 import { initControls, updateControls, getInputState, resetInput, setCameraTarget, setCameraMode, setFPSLook, addFPSYaw } from './controls.js';
 import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, spawnEnemiesAt, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, getGoldGained, resetGoldGained, getMaterialsGained, resetMaterialsGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, getEnemies, getPillarBoss, setGameBridge, getCarryYawDelta } from './entities.js';
+// Stage content files self-register their minibosses with the engine on load.
+import './enemies-mid.js';
+import './enemies-late.js';
 
 // ============================================
 // GAME STATE
@@ -54,6 +57,19 @@ const defaultGameData = {
 };
 
 let gameData = JSON.parse(JSON.stringify(defaultGameData));
+
+// ============================================
+// TESTING TOGGLES — set these off before release
+// (note: defaultGameData also has TESTING health 1000)
+// ============================================
+const TESTING_UNLOCK_ALL_FLOORS = true;   // floor select offers all 10 floors
+const TESTING_XP_GRANT = 2000;            // top up XP to this on load (0 = disabled)
+
+function applyTestingOverrides() {
+    if (TESTING_XP_GRANT > 0 && gameData.player.xp < TESTING_XP_GRANT) {
+        gameData.player.xp = TESTING_XP_GRANT;
+    }
+}
 
 // Upgrade costs (exponential but reasonable)
 // Playing all 10 floors = ~2500 XP, should get ~80% of max upgrades
@@ -184,6 +200,7 @@ function showTitleScreen() {
 
 export function startNewGame() {
     gameData = JSON.parse(JSON.stringify(defaultGameData));
+    applyTestingOverrides();
     saveGame();
     enterTown();
 }
@@ -614,6 +631,7 @@ export function loadGame() {
             console.error('Failed to load save:', e);
         }
     }
+    applyTestingOverrides();
 }
 
 export function deleteSave() {
@@ -1012,7 +1030,7 @@ export function showFloorSelect() {
     const menu = document.getElementById('floor-select');
     const completed = gameData.progress.floorsCompleted;
     const maxCompleted = completed.length ? Math.max(...completed) : 0;
-    const maxAccessible = Math.min(maxCompleted + 1, 10);   // next floor after the highest cleared
+    const maxAccessible = TESTING_UNLOCK_ALL_FLOORS ? 10 : Math.min(maxCompleted + 1, 10);   // next floor after the highest cleared
     
     let buttons = '';
     for (let i = 1; i <= maxAccessible; i++) {
