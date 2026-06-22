@@ -668,7 +668,7 @@ export function createEnemy(type, position, floor) {
     
     const configs = {
         drone: { hp: 30, dmg: 10, radius: 0.5, speed: 3, atkRate: 2 },
-        walker: { hp: 50, dmg: 20, radius: 0.6, speed: 5, chargeSpeed: 12 },
+        walker: { hp: 50, dmg: 20, radius: 0.6, speed: 5, chargeSpeed: 12, attackReach: 2.6 },
         turret: { hp: 40, dmg: 8, radius: 0.7, speed: 0, atkRate: 0.5 },
         wisp: { hp: 20, dmg: 30, radius: 0.4, speed: 4, explodeRange: 1.5 }
     };
@@ -687,19 +687,19 @@ export function createEnemy(type, position, floor) {
         enemy.add(new THREE.PointLight(glowColor, 0.3, 3));
     } else if (type === 'walker') {
         const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 1), new THREE.MeshStandardMaterial({ color: bodyColor, metalness: 0.7 }));
-        body.position.y = 0.5;
+        body.position.y = 1.2;
         enemy.add(body);
-        [[-0.3, 0.2, 0.3], [0.3, 0.2, 0.3], [-0.3, 0.2, -0.3], [0.3, 0.2, -0.3]].forEach(pos => {
-            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.4, 0.15), new THREE.MeshStandardMaterial({ color: bodyColor }));
+        [[-0.3, 0.45, 0.3], [0.3, 0.45, 0.3], [-0.3, 0.45, -0.3], [0.3, 0.45, -0.3]].forEach(pos => {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.9, 0.16), new THREE.MeshStandardMaterial({ color: bodyColor }));
             leg.position.set(...pos);
             enemy.add(leg);
         });
         const eyeMat = new THREE.MeshBasicMaterial({ color: glowColor });
         const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), eyeMat);
-        leftEye.position.set(-0.2, 0.9, 0.45);
+        leftEye.position.set(-0.2, 1.45, 0.5);
         enemy.add(leftEye);
         const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), eyeMat);
-        rightEye.position.set(0.2, 0.9, 0.45);
+        rightEye.position.set(0.2, 1.45, 0.5);
         enemy.add(rightEye);
     } else if (type === 'turret') {
         const base = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 0.3, 8), new THREE.MeshStandardMaterial({ color: bodyColor, metalness: 0.8 }));
@@ -740,7 +740,8 @@ export function createEnemy(type, position, floor) {
         burstCount: 0,
         erraticTimer: 0,
         erraticDir: new THREE.Vector3(),
-        explodeRange: cfg.explodeRange || 0
+        explodeRange: cfg.explodeRange || 0,
+        attackReach: cfg.attackReach || 0
     };
     
     enemy.position.copy(position);
@@ -783,9 +784,9 @@ function updateEnemies(delta) {
                 toPlayer.normalize();
                 e.position.x += toPlayer.x * d.chargeSpeed * delta;
                 e.position.z += toPlayer.z * d.chargeSpeed * delta;
-                if (dist < 1) { d.isCharging = false; d.chargeCooldown = 4; }
+                if (dist < 2.5) { d.isCharging = false; d.chargeCooldown = 4; }
             } else {
-                if (dist > 3) {
+                if (dist > 4) {
                     toPlayer.normalize();
                     e.position.x += toPlayer.x * d.speed * delta;
                     e.position.z += toPlayer.z * d.speed * delta;
@@ -1497,7 +1498,8 @@ function checkEnemyCollision() {
     if (!player || player.userData.invulnerable) return;
     
     for (const e of enemies) {
-        if (player.position.distanceTo(e.position) < player.userData.radius + e.userData.radius) {
+        const reach = e.userData.attackReach || (player.userData.radius + e.userData.radius);
+        if (player.position.distanceTo(e.position) < reach) {
             gameBridge.damagePlayer(e.userData.damage);
             player.userData.invulnerable = true;
             player.userData.invulnerableTimer = 0.5;
