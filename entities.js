@@ -31,6 +31,7 @@ let projectiles = [];
 let enemyProjectiles = [];
 let currentBoss = null;
 let pillarBoss = null;
+const bossRegistry = {};   // type -> { create, update }, populated by entities.js + the stage files
 let xpGained = 0;
 let goldGained = 0;
 let materialsGained = {};   // material id -> count collected this floor (banks on completion)
@@ -623,7 +624,7 @@ function updateProjectiles(delta) {
     }
 }
 
-function createHitEffect(position, color) {
+export function createHitEffect(position, color) {
     const scene = getDungeonScene();
     if (!scene) return;
     
@@ -654,7 +655,7 @@ function createHitEffect(position, color) {
 
 const ENEMY_TYPES = { DRONE: 'drone', WALKER: 'walker', TURRET: 'turret', WISP: 'wisp' };
 
-function createEnemy(type, position, floor) {
+export function createEnemy(type, position, floor) {
     const scene = getDungeonScene();
     if (!scene) return null;
     
@@ -825,7 +826,7 @@ function updateEnemies(delta) {
     }
 }
 
-function createEnemyProjectile(origin, target, damage, color, speed = 8) {
+export function createEnemyProjectile(origin, target, damage, color, speed = 8) {
     const scene = getDungeonScene();
     if (!scene) return;
     
@@ -1094,13 +1095,11 @@ export function spawnMiniBoss(floor) {
     const roomData = getRoomData('west');
     const pos = new THREE.Vector3(roomData.x, 0, roomData.z);
     
-    let type = floor <= 3 ? 'sentinel' : floor <= 6 ? 'hollow' : floor <= 9 ? 'dreamer' : 'emperor';
+    const type = floor <= 3 ? 'sentinel' : floor <= 6 ? 'hollow' : floor <= 9 ? 'dreamer' : 'emperor';
     const tier = ((floor - 1) % 3) + 1;
     
-    if (type === 'sentinel') currentBoss = createSentinel(pos, tier, floor);
-    else if (type === 'hollow') currentBoss = createHollow(pos, tier, floor);
-    else if (type === 'dreamer') currentBoss = createDreamer(pos, tier, floor);
-    else currentBoss = createEmperor(pos, floor);
+    const def = bossRegistry[type];
+    if (def) currentBoss = def.create(pos, tier, floor);
 }
 
 function createSentinel(pos, tier, floor) {
@@ -1127,98 +1126,14 @@ function createSentinel(pos, tier, floor) {
     return boss;
 }
 
-function createHollow(pos, tier, floor) {
-    const scene = getDungeonScene();
-    const boss = new THREE.Group();
-    const hp = [250, 400, 600][tier - 1];
-    
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1a1020, emissive: 0x200030, emissiveIntensity: 0.2 });
-    boss.add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 2, 8), bodyMat).translateY(1));
-    const ribMat = new THREE.MeshStandardMaterial({ color: 0x888899, metalness: 0.9 });
-    for (let i = 0; i < 4; i++) {
-        const rib = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.03, 8, 8, Math.PI), ribMat);
-        rib.position.y = 0.6 + i * 0.3;
-        rib.rotation.y = Math.PI / 2;
-        boss.add(rib);
-    }
-    boss.add(new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 12), bodyMat).translateY(2.3));
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xbf00ff });
-    boss.add(new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), eyeMat).translateX(-0.12).translateY(2.35).translateZ(0.2));
-    boss.add(new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), eyeMat).translateX(0.12).translateY(2.35).translateZ(0.2));
-    boss.add(new THREE.PointLight(0xbf00ff, 1, 8).translateY(1.5));
-    
-    boss.userData = { type: 'hollow', tier, health: hp, maxHealth: hp, radius: 0.8, teleportCooldown: 2, slamCooldown: 4, trailTimer: 0, trails: [], phase: 'idle' };
-    boss.position.copy(pos);
-    scene.add(boss);
-    return boss;
-}
+function updateSentinel(boss, delta) {
+    const d = boss.userData;
 
-function createDreamer(pos, tier, floor) {
-    const scene = getDungeonScene();
-    const boss = new THREE.Group();
-    const hp = [300, 500, 700][tier - 1];
-    
-    boss.add(new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.9 })));
-    const mistGeom = new THREE.SphereGeometry(1.2, 16, 16);
-    mistGeom.scale(0.8, 1.5, 0.8);
-    boss.add(new THREE.Mesh(mistGeom, new THREE.MeshBasicMaterial({ color: 0xbf00ff, transparent: true, opacity: 0.3 })));
-    for (let i = 0; i < 3; i++) {
-        const face = new THREE.Mesh(new THREE.CircleGeometry(0.3, 16), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
-        face.position.set((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 1.5, 0.8);
-        face.name = `face${i}`;
-        boss.add(face);
-    }
-    boss.add(new THREE.PointLight(0xffaa00, 2, 15));
-    
-    boss.userData = { type: 'dreamer', tier, health: hp, maxHealth: hp, radius: 1.2, attackCooldown: 0, mirrorCooldown: 5, zoneCooldown: 8, mirrors: [], zones: [] };
-    boss.position.copy(pos);
-    boss.position.y = 2;
-    scene.add(boss);
-    return boss;
-}
-
-function createEmperor(pos, floor) {
-    const scene = getDungeonScene();
-    const boss = new THREE.Group();
-    
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2040, emissive: 0x200030, emissiveIntensity: 0.3 });
-    boss.add(new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 2, 8), bodyMat).translateY(1));
-    const robeMat = new THREE.MeshStandardMaterial({ color: 0x4a2060, emissive: 0x100020, emissiveIntensity: 0.2 });
-    const robe = new THREE.Mesh(new THREE.ConeGeometry(0.8, 1.5, 8), robeMat);
-    robe.position.y = 0.5;
-    robe.rotation.x = Math.PI;
-    boss.add(robe);
-    
-    const crownMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.2 });
-    boss.add(new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.3, 6), crownMat).translateY(2.4));
-    for (let i = 0; i < 6; i++) {
-        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.3, 4), crownMat);
-        const angle = (i / 6) * Math.PI * 2;
-        spike.position.set(Math.cos(angle) * 0.2, 2.6, Math.sin(angle) * 0.2);
-        boss.add(spike);
-    }
-    boss.add(new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 12), new THREE.MeshStandardMaterial({ color: 0x8a7766 })).translateY(2.1));
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
-    boss.add(new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), eyeMat).translateX(-0.1).translateY(2.15).translateZ(0.25));
-    boss.add(new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), eyeMat).translateX(0.1).translateY(2.15).translateZ(0.25));
-    boss.add(new THREE.PointLight(0xffd700, 1.5, 12).translateY(1.5));
-    
-    boss.userData = { type: 'emperor', health: 800, maxHealth: 800, radius: 1, attackCooldown: 0, slamCooldown: 0, summonCooldown: 10, speechGiven: false };
-    boss.position.copy(pos);
-    scene.add(boss);
-    return boss;
-}
-
-function updateBoss(delta) {
-    if (!currentBoss) return;
-    const d = currentBoss.userData;
-    
-    if (d.type === 'sentinel') {
-        currentBoss.children.forEach((c, i) => { if (c.name?.startsWith('ring')) { c.rotation.x += delta * (1 + i * 0.5); c.rotation.y += delta * (0.5 + i * 0.3); } });
-        currentBoss.position.y = 2 + Math.sin(Date.now() * 0.002) * 0.3;
-        const eye = currentBoss.getObjectByName('eye');
+        boss.children.forEach((c, i) => { if (c.name?.startsWith('ring')) { c.rotation.x += delta * (1 + i * 0.5); c.rotation.y += delta * (0.5 + i * 0.3); } });
+        boss.position.y = 2 + Math.sin(Date.now() * 0.002) * 0.3;
+        const eye = boss.getObjectByName('eye');
         if (eye && player) {
-            const toP = new THREE.Vector3().subVectors(player.position, currentBoss.position);
+            const toP = new THREE.Vector3().subVectors(player.position, boss.position);
             const a = Math.atan2(toP.x, toP.z);
             eye.position.x = Math.sin(a) * 0.5;
             eye.position.z = Math.cos(a) * 0.5;
@@ -1227,7 +1142,7 @@ function updateBoss(delta) {
         d.droneSpawnTimer -= delta;
         if (d.droneSpawnTimer <= 0 && d.drones.length < d.maxDrones) {
             const drone = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 }));
-            drone.position.copy(currentBoss.position);
+            drone.position.copy(boss.position);
             drone.userData = { orbitAngle: Math.random() * Math.PI * 2, orbitSpeed: 1 + Math.random() * 0.5, attackCooldown: 2, health: 20 };
             getDungeonScene().add(drone);
             d.drones.push(drone);
@@ -1237,9 +1152,9 @@ function updateBoss(delta) {
         for (let i = d.drones.length - 1; i >= 0; i--) {
             const dr = d.drones[i];
             dr.userData.orbitAngle += dr.userData.orbitSpeed * delta;
-            dr.position.x = currentBoss.position.x + Math.cos(dr.userData.orbitAngle) * 2.5;
-            dr.position.z = currentBoss.position.z + Math.sin(dr.userData.orbitAngle) * 2.5;
-            dr.position.y = currentBoss.position.y + Math.sin(dr.userData.orbitAngle * 2) * 0.5;
+            dr.position.x = boss.position.x + Math.cos(dr.userData.orbitAngle) * 2.5;
+            dr.position.z = boss.position.z + Math.sin(dr.userData.orbitAngle) * 2.5;
+            dr.position.y = boss.position.y + Math.sin(dr.userData.orbitAngle * 2) * 0.5;
             dr.userData.attackCooldown -= delta;
             if (dr.userData.attackCooldown <= 0) {
                 createEnemyProjectile(dr.position.clone(), player.position.clone(), 8, 0x00ffff);
@@ -1265,7 +1180,7 @@ function updateBoss(delta) {
         if (d.attackCooldown <= 0 && !d.beamCharging) {
             d.beamCharging = true;
             d.beamTimer = 1.5;
-            const eye = currentBoss.getObjectByName('eye');
+            const eye = boss.getObjectByName('eye');
             if (eye) eye.material.color.setHex(0xff0000);
         }
         if (d.beamCharging) {
@@ -1274,196 +1189,19 @@ function updateBoss(delta) {
                 fireSentinelBeam();
                 d.beamCharging = false;
                 d.attackCooldown = 3 - d.tier * 0.5;
-                const eye = currentBoss.getObjectByName('eye');
+                const eye = boss.getObjectByName('eye');
                 if (eye) eye.material.color.setHex(0x00ffff);
             }
         }
-    } else if (d.type === 'hollow') {
-        currentBoss.rotation.y += Math.sin(Date.now() * 0.01) * 0.02;
-        currentBoss.position.y = Math.sin(Date.now() * 0.005) * 0.1;
-        const toP = new THREE.Vector3().subVectors(player.position, currentBoss.position);
-        toP.y = 0;
-        currentBoss.rotation.y += (Math.atan2(toP.x, toP.z) - currentBoss.rotation.y) * delta * 3;
-        
-        d.trailTimer -= delta;
-        if (d.trailTimer <= 0 && d.phase === 'moving') {
-            const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.1, 8), new THREE.MeshBasicMaterial({ color: 0x4a0066, transparent: true, opacity: 0.6 }));
-            tr.position.copy(currentBoss.position);
-            tr.position.y = 0.05;
-            tr.userData = { lifespan: d.tier >= 2 ? 3 : 2, maxLife: d.tier >= 2 ? 3 : 2 };
-            getDungeonScene().add(tr);
-            d.trails.push(tr);
-            d.trailTimer = 0.2;
-        }
-        
-        for (let i = d.trails.length - 1; i >= 0; i--) {
-            const tr = d.trails[i];
-            tr.userData.lifespan -= delta;
-            tr.material.opacity = tr.userData.lifespan / tr.userData.maxLife * 0.6;
-            if (player.position.distanceTo(tr.position) < 1 && !player.userData.invulnerable) {
-                gameBridge.damagePlayer(5);
-                player.userData.invulnerable = true;
-                player.userData.invulnerableTimer = 0.3;
-            }
-            if (tr.userData.lifespan <= 0) {
-                getDungeonScene().remove(tr);
-                d.trails.splice(i, 1);
-            }
-        }
-        
-        d.teleportCooldown -= delta;
-        if (d.teleportCooldown <= 0 && d.phase === 'idle') {
-            d.phase = 'teleporting';
-            toP.normalize().multiplyScalar(3);
-            const newPos = player.position.clone().sub(toP);
-            createHitEffect(currentBoss.position.clone(), 0xbf00ff);
-            currentBoss.position.x = newPos.x;
-            currentBoss.position.z = newPos.z;
-            createHitEffect(currentBoss.position.clone(), 0xbf00ff);
-            if (currentBoss.position.distanceTo(player.position) < 2 && !player.userData.invulnerable) {
-                gameBridge.damagePlayer(20);
-                player.userData.invulnerable = true;
-                player.userData.invulnerableTimer = 0.5;
-            }
-            d.teleportCooldown = 4 - d.tier * 0.5;
-            setTimeout(() => d.phase = 'idle', d.tier >= 3 ? 900 : 300);
-        }
-        
-        d.slamCooldown -= delta;
-        if (d.slamCooldown <= 0 && d.phase === 'idle' && toP.length() < 5) {
-            d.phase = 'slamming';
-            setTimeout(() => {
-                createShockwave(currentBoss.position.clone(), d.tier);
-                if (d.tier >= 2) setTimeout(() => createShockwave(currentBoss.position.clone(), d.tier), 500);
-                d.slamCooldown = 5;
-                d.phase = 'idle';
-            }, 500);
-        }
-    } else if (d.type === 'dreamer') {
-        currentBoss.position.y = 2 + Math.sin(Date.now() * 0.002) * 0.5;
-        currentBoss.children[0].material.opacity = 0.7 + Math.sin(Date.now() * 0.005) * 0.2;
-        currentBoss.children.forEach(c => {
-            if (c.name?.startsWith('face')) {
-                c.material.opacity = Math.random() > 0.7 ? 0.6 : 0.2;
-                c.position.x += (Math.random() - 0.5) * 0.02;
-                c.position.y += (Math.random() - 0.5) * 0.02;
-            }
-        });
-        currentBoss.lookAt(player.position.x, currentBoss.position.y, player.position.z);
-        
-        d.attackCooldown -= delta;
-        if (d.attackCooldown <= 0) {
-            const numShards = 5 + d.tier * 2;
-            for (let i = 0; i < numShards; i++) {
-                const a = (i / numShards) * Math.PI * 2 + Date.now() * 0.001;
-                const dir = new THREE.Vector3(Math.sin(a), 0, Math.cos(a));
-                createEnemyProjectile(currentBoss.position.clone(), currentBoss.position.clone().add(dir.multiplyScalar(20)), 10, 0xffaa00, 6);
-            }
-            d.attackCooldown = 2 - d.tier * 0.3;
-        }
-        
-        d.mirrorCooldown -= delta;
-        if (d.mirrorCooldown <= 0 && d.mirrors.length < d.tier) {
-            const mirror = currentBoss.clone();
-            mirror.scale.setScalar(0.8);
-            mirror.traverse(c => { if (c.material) { c.material = c.material.clone(); c.material.opacity *= 0.6; } });
-            mirror.userData = { health: 50 + d.tier * 20, lifespan: 15, attackCooldown: 2 };
-            getDungeonScene().add(mirror);
-            d.mirrors.push(mirror);
-            d.mirrorCooldown = 8;
-        }
-        
-        for (let i = d.mirrors.length - 1; i >= 0; i--) {
-            const m = d.mirrors[i];
-            m.userData.lifespan -= delta;
-            m.userData.attackCooldown -= delta;
-            if (m.userData.attackCooldown <= 0) {
-                for (let j = 0; j < 3; j++) {
-                    const a = (j / 3) * Math.PI * 2;
-                    createEnemyProjectile(m.position.clone(), m.position.clone().add(new THREE.Vector3(Math.sin(a), 0, Math.cos(a)).multiplyScalar(20)), 8, 0xffaa00, 5);
-                }
-                m.userData.attackCooldown = 3;
-            }
-            const angle = Date.now() * 0.001 + i * 2;
-            m.position.x = currentBoss.position.x + Math.cos(angle) * 4;
-            m.position.z = currentBoss.position.z + Math.sin(angle) * 4;
-            m.position.y = currentBoss.position.y;
-            
-            for (let j = projectiles.length - 1; j >= 0; j--) {
-                if (projectiles[j].position.distanceTo(m.position) < 1) {
-                    m.userData.health -= projectiles[j].userData.damage;
-                    createHitEffect(m.position.clone(), 0xffaa00);
-                    getDungeonScene().remove(projectiles[j]);
-                    projectiles.splice(j, 1);
-                    break;
-                }
-            }
-            if (m.userData.lifespan <= 0 || m.userData.health <= 0) {
-                getDungeonScene().remove(m);
-                d.mirrors.splice(i, 1);
-            }
-        }
-        
-        d.zoneCooldown -= delta;
-        if (d.zoneCooldown <= 0) {
-            const zone = new THREE.Mesh(new THREE.CircleGeometry(2, 16), new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.4, side: THREE.DoubleSide }));
-            zone.position.copy(player.position);
-            zone.position.y = 0.1;
-            zone.rotation.x = -Math.PI / 2;
-            zone.userData = { lifespan: 5 + d.tier * 2 };
-            getDungeonScene().add(zone);
-            d.zones.push(zone);
-            d.zoneCooldown = 10;
-        }
-        
-        for (let i = d.zones.length - 1; i >= 0; i--) {
-            const z = d.zones[i];
-            z.userData.lifespan -= delta;
-            z.material.opacity = 0.3 + Math.sin(Date.now() * 0.01) * 0.1;
-            if (d.tier >= 2) {
-                const toP = new THREE.Vector3().subVectors(player.position, z.position);
-                toP.y = 0;
-                toP.normalize().multiplyScalar(delta * 2);
-                z.position.add(toP);
-            }
-            if (player.position.distanceTo(z.position) < 2 && !player.userData.invulnerable) {
-                gameBridge.damagePlayer(10);
-                player.userData.invulnerable = true;
-                player.userData.invulnerableTimer = 0.5;
-            }
-            if (z.userData.lifespan <= 0) {
-                getDungeonScene().remove(z);
-                d.zones.splice(i, 1);
-            }
-        }
-    } else if (d.type === 'emperor') {
-        if (!d.speechGiven) { d.speechGiven = true; if (window.showEmperorDialogue) window.showEmperorDialogue(); }
-        currentBoss.position.y = 0.2 + Math.sin(Date.now() * 0.002) * 0.1;
-        currentBoss.lookAt(player.position.x, currentBoss.position.y, player.position.z);
-        
-        d.attackCooldown -= delta;
-        if (d.attackCooldown <= 0) {
-            for (let i = 0; i < 5; i++) {
-                const a = (i / 5) * Math.PI * 2 + Date.now() * 0.001;
-                createEnemyProjectile(currentBoss.position.clone(), currentBoss.position.clone().add(new THREE.Vector3(Math.sin(a), 0, Math.cos(a)).multiplyScalar(20)), 15, 0xffd700, 10);
-            }
-            d.attackCooldown = 2;
-        }
-        
-        d.slamCooldown -= delta;
-        if (d.slamCooldown <= 0) {
-            createShockwave(currentBoss.position.clone(), 3);
-            d.slamCooldown = 5;
-        }
-        
-        d.summonCooldown -= delta;
-        if (d.summonCooldown <= 0 && enemies.length < 3) {
-            const a = Math.random() * Math.PI * 2;
-            createEnemy('drone', new THREE.Vector3(currentBoss.position.x + Math.cos(a) * 4, 0, currentBoss.position.z + Math.sin(a) * 4), 10);
-            d.summonCooldown = 8;
-        }
     }
+
+function updateBoss(delta) {
+    if (!currentBoss) return;
+    const def = bossRegistry[currentBoss.userData.type];
+    if (def?.update) def.update(currentBoss, delta);
 }
+
+registerBoss('sentinel', { create: createSentinel, update: updateSentinel });
 
 function fireSentinelBeam() {
     const scene = getDungeonScene();
@@ -1509,7 +1247,7 @@ function fireSentinelBeam() {
     setTimeout(() => scene.remove(beam), tier >= 2 ? 1000 : 300);
 }
 
-function createShockwave(position, tier) {
+export function createShockwave(position, tier) {
     const scene = getDungeonScene();
     const wave = new THREE.Mesh(new THREE.RingGeometry(0.5, 1, 32), new THREE.MeshBasicMaterial({ color: 0xbf00ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
     wave.rotation.x = -Math.PI / 2;
@@ -1558,6 +1296,11 @@ function destroyBoss() {
 
 export function getBoss() { return currentBoss; }
 export function getPillarBoss() { return pillarBoss; }
+
+// Boss/elite plumbing shared with the stage content files (enemies-mid/late).
+export function registerBoss(type, def) { bossRegistry[type] = def; }
+export function getProjectiles() { return projectiles; }
+export function hurtPlayer(amount) { gameBridge.damagePlayer?.(amount); }
 export function disposeBosses() {
     const scene = getDungeonScene();
     if (currentBoss) {
