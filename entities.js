@@ -33,7 +33,8 @@ let currentBoss = null;
 let pillarBoss = null;
 let xpGained = 0;
 let goldGained = 0;
-let orbs = [];          // collectible XP / gold orbs
+let materialsGained = {};   // material id -> count collected this floor (banks on completion)
+let orbs = [];          // collectible XP / gold / material orbs
 
 // Cooldowns
 const cooldowns = { attack: 0, spread: 0, burst: 0, mega: 0, sword: 0 };
@@ -461,7 +462,7 @@ function fireSwordAttack() {
     for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         if (inArc(e.position.x - px, e.position.z - pz, e.userData.radius || 0.5)) {
-            damageEnemy(e, dmg);
+            damageEnemy(e, dmg, 'sword');
         }
     }
     // Mini-boss
@@ -588,7 +589,7 @@ function updateProjectiles(delta) {
             const dxz = Math.hypot(proj.position.x - e.position.x, proj.position.z - e.position.z);
             const dy = Math.abs(proj.position.y - e.position.y);
             if (dxz < e.userData.radius + 1.0 && dy < 2.2) {
-                damageEnemy(e, proj.userData.damage);
+                damageEnemy(e, proj.userData.damage, 'magic');
                 hit = true;
                 if (!proj.userData.piercing) break;
             }
@@ -892,8 +893,13 @@ function createExplosion(position, damage) {
     animate();
 }
 
-function damageEnemy(enemy, damage) {
+function damageEnemy(enemy, damage, source = 'magic') {
     enemy.userData.health -= damage;
+    
+    // Record what hit this enemy, for the kill-method (sword / magic / combo)
+    if (!enemy.userData.hitBy) enemy.userData.hitBy = { sword: false, magic: false };
+    enemy.userData.hitBy[source === 'sword' ? 'sword' : 'magic'] = true;
+    
     enemy.traverse(child => {
         if (child.material?.color) {
             const orig = child.material.color.getHex();
@@ -901,9 +907,23 @@ function damageEnemy(enemy, damage) {
             setTimeout(() => child.material.color.setHex(orig), 100);
         }
     });
+    
+    const dmgN = Math.round(damage);
     if (enemy.userData.health <= 0) {
         const idx = enemies.indexOf(enemy);
-        if (idx > -1) destroyEnemy(enemy, idx, true);
+        if (idx > -1) {
+            const hb = enemy.userData.hitBy;
+            const method = (hb.sword && hb.magic) ? 'combo' : (hb.sword ? 'sword' : 'magic');
+            gameBridge.spawnCombatText?.(enemy.position, dmgN, { kill: true, method });
+            
+            // Kill method picks the drop's rarity: sword -> rarest, combo -> common
+            const mat = MATERIALS[method];
+            if (mat && Math.random() < mat.chance) spawnMaterialOrb(enemy.position, mat);
+            
+            destroyEnemy(enemy, idx, true);
+        }
+    } else {
+        gameBridge.spawnCombatText?.(enemy.position, dmgN, {});
     }
 }
 
@@ -920,6 +940,28 @@ function destroyEnemy(enemy, index, giveXP) {
     createHitEffect(enemy.position.clone(), 0xff8800);
     scene.remove(enemy);
     enemies.splice(index, 1);
+}
+
+// ---- Drops: materials by kill method ----
+// Kill method picks the drop's rarity. Sword-only kills are hardest, so the
+// Tempered Core is rarest; combo is the reliable kill, so Salvage is common.
+const MATERIALS = {
+    sword: { id: 'tempered_core',  name: 'Tempered Core',  color: 0xff5533, css: '#ff8866', chance: 0.12 },
+    magic: { id: 'resonant_shard', name: 'Resonant Shard', color: 0xaa66ff, css: '#c79bff', chance: 0.20 },
+    combo: { id: 'salvage',        name: 'Salvage',        color: 0xbbbbbb, css: '#dddddd', chance: 0.30 }
+};
+
+function spawnMaterialOrb(position, mat) {
+    const scene = getDungeonScene();
+    if (!scene) return;
+    const orb = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.38, 0),
+        new THREE.MeshStandardMaterial({ color: mat.color, emissive: mat.color, emissiveIntensity: 1.0, metalness: 0.6, roughness: 0.25 })
+    );
+    orb.position.set(position.x, 1.2, position.z);
+    orb.userData = { mat, vy: 3.5, spin: 3 };
+    scene.add(orb);
+    orbs.push(orb);
 }
 
 // ---- XP / Gold orbs ----
@@ -978,8 +1020,17 @@ function updateOrbs(delta) {
         }
         
         if (dist < COLLECT) {
-            if (d.isGold) goldGained += d.value; else xpGained += d.value;
-            createHitEffect(orb.position.clone(), d.isGold ? 0xffcc33 : 0x33ddaa);
+            if (d.mat) {
+                materialsGained[d.mat.id] = (materialsGained[d.mat.id] || 0) + 1;
+                gameBridge.spawnCombatText?.(orb.position, '+ ' + d.mat.name, { material: true, css: d.mat.css });
+                createHitEffect(orb.position.clone(), d.mat.color);
+            } else if (d.isGold) {
+                goldGained += d.value;
+                createHitEffect(orb.position.clone(), 0xffcc33);
+            } else {
+                xpGained += d.value;
+                createHitEffect(orb.position.clone(), 0x33ddaa);
+            }
             scene?.remove(orb);
             orb.geometry.dispose();
             orb.material.dispose();
@@ -1485,6 +1536,7 @@ function createShockwave(position, tier) {
 
 function damageBoss(boss, damage) {
     boss.userData.health -= damage;
+    gameBridge.spawnCombatText?.(boss.position, Math.round(damage), {});
     boss.traverse(c => { if (c.material?.emissive) { const orig = c.material.emissive.getHex(); c.material.emissive.setHex(0xffffff); setTimeout(() => c.material.emissive.setHex(orig), 100); } });
     if (boss.userData.health <= 0) destroyBoss();
 }
@@ -1665,6 +1717,7 @@ function updatePillarBoss(delta) {
 
 function damagePillarNode(node, damage) {
     node.userData.health -= damage;
+    gameBridge.spawnCombatText?.(node.getWorldPosition(new THREE.Vector3()), Math.round(damage), {});
     const orig = node.material.color.getHex();
     node.material.color.setHex(0xffffff);
     setTimeout(() => node.material.color.setHex(orig), 100);
@@ -1746,6 +1799,8 @@ export function getXPGained() { return xpGained; }
 export function resetXPGained() { xpGained = 0; }
 export function getGoldGained() { return goldGained; }
 export function resetGoldGained() { goldGained = 0; }
+export function getMaterialsGained() { return materialsGained; }
+export function resetMaterialsGained() { materialsGained = {}; }
 
 // ============================================
 // MAIN UPDATE
