@@ -805,3 +805,80 @@ canvas {
 #game-ui.topdown #crosshair {
     display: none;
 }
+
+/* ===== Floating combat text ===== */
+#combat-text-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 15;
+}
+
+.combat-text {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-weight: bold;
+    font-size: 1.05rem;
+    color: #ffffff;
+    text-shadow: 0 0 4px #000, 0 1px 2px #000;
+    white-space: nowrap;
+    animation: combatFloat 0.9s ease-out forwards;
+}
+
+.combat-text.kill-text {
+    font-size: 1.5rem;
+    letter-spacing: 0.04em;
+}
+
+.kill-method { font-size: 0.85em; }
+
+.method-sword { color: #ccd8e6; }
+.method-magic { color: #33ddaa; }
+.method-combo { color: #ffcc33; }
+
+@keyframes combatFloat {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+    18%  { opacity: 1; transform: translate(-50%, -95%) scale(1.12); }
+    100% { opacity: 0; transform: translate(-50%, -215%) scale(1); }
+}
+
+/* Material pickup text */
+.combat-text.material-text {
+    font-size: 1.15rem;
+    text-shadow: 0 0 5px #000, 0 1px 2px #000;
+}
+
+/* Merchant inventory list */
+.inventory-list {
+    margin: 8px 0 14px;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+}
+.inventory-list h4 {
+    margin: 0 0 8px;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    color: #9fb4c8;
+    text-transform: uppercase;
+}
+.inv-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    gap: 4px 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.inv-row:last-child { border-bottom: none; }
+.inv-row .item-desc {
+    grid-column: 1 / -1;
+    font-size: 0.7rem;
+    color: #7d8a99;
+}
+.inv-name { font-weight: bold; color: #e6edf3; }
+.inv-count { font-weight: bold; color: #ffcc33; }
+.inv-empty .inv-name,
+.inv-empty .inv-count { opacity: 0.45; }
