@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { initDungeon, getDungeonScene, loadFloor, getRoomData, getCurrentFloor, setCurrentFloor, disposeDungeon, updateRotatingRings, openGate, getSouthChambers } from './dungeon.js';
 import { initTown, getTownScene, disposeTown, showNPCDialogue, setNPCInteractionCallback } from './town.js';
 import { initControls, updateControls, getInputState, resetInput, setCameraTarget, setCameraMode, setFPSLook, addFPSYaw } from './controls.js';
-import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, spawnEnemiesAt, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, getGoldGained, resetGoldGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, getEnemies, getPillarBoss, setGameBridge, getCarryYawDelta } from './entities.js';
+import { initEntities, updateEntities, getPlayer, spawnEnemiesForRoom, spawnEnemiesAt, clearAllEnemies, spawnMiniBoss, spawnPillarBoss, getXPGained, resetXPGained, getGoldGained, resetGoldGained, getMaterialsGained, resetMaterialsGained, disposeBosses, disposePillarBoss, clearPlatformCache, getBoss, getEnemies, getPillarBoss, setGameBridge, getCarryYawDelta } from './entities.js';
 
 // ============================================
 // GAME STATE
@@ -24,7 +24,8 @@ const defaultGameData = {
         health: 1000,   // TESTING: temporary high health
         maxHealth: 1000, // TESTING: temporary high health
         xp: 0,
-        gold: 0
+        gold: 0,
+        inventory: {}   // material id -> count (banked from each floor's haul)
     },
     upgrades: {
         baseDamage: 0,      // +3 damage per level
@@ -89,7 +90,8 @@ export async function initGame() {
             damagePlayer,
             getUpgradeLevel,
             hasAbility,
-            getGameData
+            getGameData,
+            spawnCombatText
         });
         setNPCInteractionCallback(interactWithNPC);
         
@@ -242,6 +244,7 @@ export function enterDungeon(floor = null) {
     clearPlatformCache();
     resetXPGained();
     resetGoldGained();
+    resetMaterialsGained();
     
     // Load floor
     loadFloor(getCurrentFloor());
@@ -397,6 +400,12 @@ function floorComplete() {
     gameData.player.xp += xp;
     gameData.player.gold += gold;
     
+    // Bank the floor's material haul
+    const haul = getMaterialsGained();
+    for (const id in haul) {
+        gameData.player.inventory[id] = (gameData.player.inventory[id] || 0) + haul[id];
+    }
+    
     // Track progress
     if (!gameData.progress.floorsCompleted.includes(floor)) {
         gameData.progress.floorsCompleted.push(floor);
@@ -507,6 +516,7 @@ export function retryFloor() {
     gameData.player.health = gameData.player.maxHealth;
     resetXPGained();
     resetGoldGained();
+    resetMaterialsGained();
     enterDungeon(getCurrentFloor());
 }
 
@@ -647,6 +657,37 @@ function showNotification(text) {
     notif.textContent = text;
     notif.classList.remove('hidden');
     setTimeout(() => notif.classList.add('hidden'), 3000);
+}
+
+// Floating combat text: a damage number at the hit point, or — on a killing
+// blow — the kill method (SWORD / MAGIC / COMBO) with the final number. Renders
+// as a short-lived HTML overlay element, projected once from the world point.
+function spawnCombatText(worldPos, amount, opts = {}) {
+    if (!camera) return;
+    const layer = document.getElementById('combat-text-layer');
+    if (!layer) return;
+    
+    const v = new THREE.Vector3(worldPos.x, worldPos.y + 1.4, worldPos.z).project(camera);
+    if (v.z > 1) return;   // behind the camera
+    const x = (v.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-v.y * 0.5 + 0.5) * window.innerHeight;
+    
+    const el = document.createElement('div');
+    if (opts.kill) {
+        el.className = `combat-text kill-text method-${opts.method}`;
+        el.innerHTML = `<span class="kill-method">${opts.method.toUpperCase()}</span> ${amount}`;
+    } else if (opts.material) {
+        el.className = 'combat-text material-text';
+        el.textContent = amount;          // already a "+ Name" string
+        el.style.color = opts.css;
+    } else {
+        el.className = 'combat-text';
+        el.textContent = amount;
+    }
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    layer.appendChild(el);
+    setTimeout(() => el.remove(), 900);
 }
 
 // ============================================
@@ -857,11 +898,33 @@ function showApprenticeMenu() {
     menu.classList.remove('hidden');
 }
 
+const MATERIAL_INFO = {
+    salvage:        { name: 'Salvage',        desc: 'Common warden scrap — from combo kills' },
+    resonant_shard: { name: 'Resonant Shard', desc: 'Magic-attuned residue — from magic kills' },
+    tempered_core:  { name: 'Tempered Core',  desc: 'Intact core — from sword kills (rare)' }
+};
+
 function showMerchantMenu() {
+    const inv = gameData.player.inventory || {};
+    const matRows = Object.keys(MATERIAL_INFO).map(id => {
+        const count = inv[id] || 0;
+        const info = MATERIAL_INFO[id];
+        return `
+            <div class="inv-row ${count > 0 ? '' : 'inv-empty'}">
+                <span class="inv-name">${info.name}</span>
+                <span class="inv-count">×${count}</span>
+                <span class="item-desc">${info.desc}</span>
+            </div>`;
+    }).join('');
+    
     const menu = document.getElementById('shop-menu');
     menu.innerHTML = `
         <h3>THE MERCHANT</h3>
-        <p class="npc-dialogue">"Potions for the depths. You'll need them."</p>
+        <p class="npc-dialogue">"Potions for the depths. And let's see what you've hauled up..."</p>
+        <div class="inventory-list">
+            <h4>Your Materials</h4>
+            ${matRows}
+        </div>
         <div class="shop-items">
             <button ${gameData.player.xp < 30 ? 'disabled' : ''} onclick="window.gameAPI.buyPotion()">
                 Health Potion - 30 XP
