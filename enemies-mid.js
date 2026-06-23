@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { getDungeonScene } from './dungeon.js';
 import {
     registerBoss,
+    registerEnemy,
     getPlayer,
     createHitEffect,
     createShockwave,
@@ -242,3 +243,148 @@ function updateDreamer(boss, delta) {
 
 registerBoss('hollow', { create: createHollow, update: updateHollow });
 registerBoss('dreamer', { create: createDreamer, update: updateDreamer });
+
+// ===========================================================================
+// MIDGAME ENEMY POOL (Hybrid theme) — Hybrid, Bulwark, Arc Capacitor.
+// Each registers a config (stats), build (mesh), update (behavior), and
+// optionally onDamage (how it takes player damage by method/direction).
+// ===========================================================================
+
+const DREAM = 0xc850ff;   // corrupted dream-core accent
+const ARC = 0x66ddff;     // energy shield / capacitor accent
+
+// ---- HYBRID: a corrupted machine. Sword the chassis, magic the exposed core.
+function buildHybrid(enemy, { bodyColor }) {
+    const mat = new THREE.MeshStandardMaterial({ color: bodyColor, metalness: 0.7, roughness: 0.4 });
+    enemy.add(new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.2, 0.8), mat).translateY(0.9));      // chassis
+    enemy.add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.4, 0.6), mat).translateY(1.4));      // shoulders
+    [[-0.35, 0.4], [0.35, 0.4]].forEach(p => enemy.add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 0.3), mat).translateX(p[0]).translateY(p[1])));
+    enemy.add(new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), mat).translateY(1.75));   // head
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.28, 0), new THREE.MeshBasicMaterial({ color: DREAM }));
+    core.name = 'hybridCore';
+    core.position.set(0, 1.0, 0.42);   // exposed at the front
+    enemy.add(core);
+    enemy.add(new THREE.PointLight(DREAM, 0.8, 6).translateY(1.1));
+}
+
+function updateHybrid(e, delta, dist, toPlayer) {
+    const player = getPlayer();
+    if (!player) return;
+    const d = e.userData;
+    e.lookAt(player.position.x, e.position.y, player.position.z);
+    if (dist > 1.2) {
+        const dir = toPlayer.clone().normalize();
+        e.position.x += dir.x * d.speed * delta;
+        e.position.z += dir.z * d.speed * delta;
+    }
+    const core = e.getObjectByName('hybridCore');
+    if (core) core.scale.setScalar(1 + Math.sin(Date.now() * 0.006) * 0.18);
+}
+
+registerEnemy('hybrid', {
+    config: { hp: 70, dmg: 16, radius: 0.7, speed: 2.5 },
+    build: buildHybrid,
+    update: updateHybrid,
+    onDamage: (e, damage, source) => source === 'magic' ? damage * 1.6 : damage,   // core melts to magic
+});
+
+// ---- BULWARK: a slow-turning shielded advancer. Its front deflects magic;
+// flank it for a magic hit, or just sword it.
+function buildBulwark(enemy, { bodyColor }) {
+    const mat = new THREE.MeshStandardMaterial({ color: bodyColor, metalness: 0.8, roughness: 0.3 });
+    enemy.add(new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 1.4, 8), mat).translateY(0.9));
+    enemy.add(new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 10), mat).translateY(1.7));
+    [[-0.25, 0.4], [0.25, 0.4]].forEach(p => enemy.add(new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.8, 0.22), mat).translateX(p[0]).translateY(p[1])));
+    const shield = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.8, 0.08), new THREE.MeshBasicMaterial({ color: ARC, transparent: true, opacity: 0.45, side: THREE.DoubleSide }));
+    shield.position.set(0, 1.0, 0.7);   // on the +z face (front)
+    shield.name = 'shield';
+    enemy.add(shield);
+    enemy.add(new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.05, 6, 4), new THREE.MeshStandardMaterial({ color: ARC, emissive: ARC, emissiveIntensity: 0.5 })).translateY(1.0).translateZ(0.7));
+    enemy.add(new THREE.PointLight(ARC, 0.5, 5).translateY(1).translateZ(0.5));
+}
+
+function updateBulwark(e, delta, dist, toPlayer) {
+    const player = getPlayer();
+    if (!player) return;
+    const d = e.userData;
+    // Turn slowly toward the player so a quick player can round its flank.
+    const targetYaw = Math.atan2(toPlayer.x, toPlayer.z);
+    let diff = targetYaw - e.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    const maxTurn = 1.2 * delta;
+    e.rotation.y += Math.max(-maxTurn, Math.min(maxTurn, diff));
+    if (dist > 1.3) {
+        const dir = toPlayer.clone().normalize();
+        e.position.x += dir.x * d.speed * delta;
+        e.position.z += dir.z * d.speed * delta;
+    }
+}
+
+function bulwarkDeflect(e, damage, source, fromPos) {
+    if (source === 'magic' && fromPos) {
+        const fwd = new THREE.Vector3(Math.sin(e.rotation.y), 0, Math.cos(e.rotation.y));
+        const toHit = new THREE.Vector3(fromPos.x - e.position.x, 0, fromPos.z - e.position.z).normalize();
+        if (fwd.dot(toHit) > 0.6) {   // struck the shielded front arc
+            createHitEffect(new THREE.Vector3(e.position.x + fwd.x * 0.8, 1, e.position.z + fwd.z * 0.8), ARC);
+            return 0;                 // deflected
+        }
+    }
+    return damage;
+}
+
+registerEnemy('bulwark', {
+    config: { hp: 60, dmg: 14, radius: 0.7, speed: 3 },
+    build: buildBulwark,
+    update: updateBulwark,
+    onDamage: bulwarkDeflect,
+});
+
+// ---- ARC CAPACITOR: stationary; overcharges (telegraph) then releases a
+// shockwave. Burst it with magic before it discharges, or back out of range.
+function buildCapacitor(enemy, { bodyColor }) {
+    const mat = new THREE.MeshStandardMaterial({ color: bodyColor, metalness: 0.8, roughness: 0.3 });
+    enemy.add(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 0.4, 8), mat).translateY(0.2));   // base
+    enemy.add(new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 1.2, 8), mat).translateY(0.9)); // pillar
+    for (let i = 0; i < 3; i++) {
+        enemy.add(new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.04, 6, 12), new THREE.MeshStandardMaterial({ color: ARC, emissive: ARC, emissiveIntensity: 0.4 })).translateY(0.6 + i * 0.3).rotateX(Math.PI / 2));
+    }
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 14), new THREE.MeshBasicMaterial({ color: ARC, transparent: true, opacity: 0.7 }));
+    orb.position.y = 1.7;
+    orb.name = 'capOrb';
+    enemy.add(orb);
+    enemy.add(new THREE.PointLight(ARC, 0.7, 6).translateY(1.7));
+}
+
+function updateCapacitor(e, delta, dist, toPlayer) {
+    const player = getPlayer();
+    if (!player) return;
+    const d = e.userData;
+    if (d.capPhase === undefined) { d.capPhase = 'idle'; d.capTimer = 1.5 + Math.random(); }
+    const cap = e.getObjectByName('capOrb');
+
+    if (d.capPhase === 'idle') {
+        if (cap) cap.scale.setScalar(1);
+        d.capTimer -= delta;
+        if (d.capTimer <= 0 && dist < 9) { d.capPhase = 'charging'; d.capTimer = 1.8; }
+    } else if (d.capPhase === 'charging') {
+        d.capTimer -= delta;
+        const t = 1 - Math.max(0, d.capTimer) / 1.8;   // 0 -> 1
+        if (cap) {
+            cap.scale.setScalar(1 + t * 1.2);          // swell as it charges
+            cap.material.opacity = 0.6 + 0.4 * Math.abs(Math.sin(Date.now() * 0.03 * (1 + t * 3)));
+        }
+        if (d.capTimer <= 0) {
+            createShockwave(e.position.clone(), 2);    // damages the player if caught in the wave
+            d.capPhase = 'idle';
+            d.capTimer = 2.5;
+            if (cap) cap.scale.setScalar(1);
+        }
+    }
+}
+
+registerEnemy('capacitor', {
+    config: { hp: 50, dmg: 12, radius: 0.6, speed: 0 },
+    build: buildCapacitor,
+    update: updateCapacitor,
+});
