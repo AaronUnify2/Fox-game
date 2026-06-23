@@ -107,7 +107,8 @@ export async function initGame() {
             getUpgradeLevel,
             hasAbility,
             getGameData,
-            spawnCombatText
+            spawnCombatText,
+            showPickup
         });
         setNPCInteractionCallback(interactWithNPC);
         
@@ -706,6 +707,33 @@ function spawnCombatText(worldPos, amount, opts = {}) {
     el.style.top = `${y}px`;
     layer.appendChild(el);
     setTimeout(() => el.remove(), 900);
+}
+
+// Pickup toasts: a small notification per item type (XP / gold / each material)
+// that counts up as you magnet a cluster, then fades. Borrows the dialogue
+// box's dark-glass-with-glow look; tinted by the item color.
+const activePickups = {};   // key -> { el, amount, timer }
+function showPickup(key, label, amount, color) {
+    const feed = document.getElementById('pickup-feed');
+    if (!feed) return;
+    let p = activePickups[key];
+    if (!p) {
+        const el = document.createElement('div');
+        el.className = 'pickup-toast';
+        el.style.color = color;
+        feed.appendChild(el);
+        p = activePickups[key] = { el, amount: 0 };
+    } else {
+        clearTimeout(p.timer);
+        p.el.classList.remove('out');
+    }
+    p.amount += amount;
+    p.el.textContent = `+${p.amount} ${label}`;
+    p.timer = setTimeout(() => {
+        p.el.classList.add('out');
+        setTimeout(() => p.el.remove(), 300);
+        delete activePickups[key];
+    }, 1500);
 }
 
 // ============================================
