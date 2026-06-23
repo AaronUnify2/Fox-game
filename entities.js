@@ -1040,12 +1040,15 @@ function updateOrbs(delta) {
             if (d.mat) {
                 materialsGained[d.mat.id] = (materialsGained[d.mat.id] || 0) + 1;
                 gameBridge.spawnCombatText?.(orb.position, '+ ' + d.mat.name, { material: true, css: d.mat.css });
+                gameBridge.showPickup?.('mat_' + d.mat.id, d.mat.name, 1, d.mat.css);
                 createHitEffect(orb.position.clone(), d.mat.color);
             } else if (d.isGold) {
                 goldGained += d.value;
+                gameBridge.showPickup?.('gold', 'Gold', d.value, '#ffcc33');
                 createHitEffect(orb.position.clone(), 0xffcc33);
             } else {
                 xpGained += d.value;
+                gameBridge.showPickup?.('xp', 'XP', d.value, '#33ddaa');
                 createHitEffect(orb.position.clone(), 0x33ddaa);
             }
             scene?.remove(orb);
