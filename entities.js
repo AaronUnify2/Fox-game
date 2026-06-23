@@ -32,6 +32,7 @@ let enemyProjectiles = [];
 let currentBoss = null;
 let pillarBoss = null;
 const bossRegistry = {};   // type -> { create, update }, populated by entities.js + the stage files
+const enemyRegistry = {};  // type -> { config, build, update, onDamage }, populated by the stage files
 let xpGained = 0;
 let goldGained = 0;
 let materialsGained = {};   // material id -> count collected this floor (banks on completion)
@@ -463,7 +464,7 @@ function fireSwordAttack() {
     for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         if (inArc(e.position.x - px, e.position.z - pz, e.userData.radius || 0.5)) {
-            damageEnemy(e, dmg, 'sword');
+            damageEnemy(e, dmg, 'sword', player.position);
         }
     }
     // Mini-boss
@@ -590,7 +591,7 @@ function updateProjectiles(delta) {
             const dxz = Math.hypot(proj.position.x - e.position.x, proj.position.z - e.position.z);
             const dy = Math.abs(proj.position.y - e.position.y);
             if (dxz < e.userData.radius + 1.0 && dy < 2.2) {
-                damageEnemy(e, proj.userData.damage, 'magic');
+                damageEnemy(e, proj.userData.damage, 'magic', proj.position);
                 hit = true;
                 if (!proj.userData.piercing) break;
             }
@@ -655,6 +656,51 @@ export function createHitEffect(position, color) {
 
 const ENEMY_TYPES = { DRONE: 'drone', WALKER: 'walker', TURRET: 'turret', WISP: 'wisp' };
 
+// ---- Enemy registry + weighted spawning ----
+// Stage files register extra enemy types (build / update / onDamage) here, so
+// new roster content lives outside the engine file.
+export function registerEnemy(type, def) { enemyRegistry[type] = def; }
+const BUILTIN_TYPES = ['drone', 'walker', 'turret', 'wisp'];
+function isEnemyType(t) { return BUILTIN_TYPES.includes(t) || !!enemyRegistry[t]; }
+
+// Spawn pools (design-doc §9). Each entry is [type, weight-within-pool].
+const EARLY_POOL = [['drone', 30], ['walker', 30], ['turret', 20], ['wisp', 20]];
+const MID_POOL   = [['hybrid', 40], ['bulwark', 30], ['capacitor', 30]];
+const LATE_POOL  = [['splitter', 40], ['wraith', 30], ['lurker', 30]];
+
+function weightedPick(pool) {
+    const avail = pool.filter(([t]) => isEnemyType(t));   // skip not-yet-built types
+    if (avail.length === 0) return null;
+    let r = Math.random() * avail.reduce((s, [, w]) => s + w, 0);
+    for (const [t, w] of avail) { if (r < w) return t; r -= w; }
+    return avail[0][0];
+}
+
+// [early%, mid%, late%] pool mix for a floor (per design-doc spawn table).
+function floorPoolMix(floor) {
+    if (floor <= 6) return [100, 0, 0];
+    const table = {
+        7: [80, 20, 0], 8: [70, 30, 0], 9: [60, 40, 0],
+        10: [45, 55, 0], 11: [30, 70, 0], 12: [20, 80, 0],
+        13: [10, 90, 0], 14: [5, 95, 0], 15: [0, 100, 0],
+        16: [0, 75, 25], 17: [0, 60, 40], 18: [0, 45, 55],
+        19: [0, 25, 75], 20: [0, 10, 90]
+    };
+    return table[floor] || [0, 0, 100];   // 21+
+}
+
+function pickEnemyType(floor) {
+    const mix = floorPoolMix(floor);
+    const pools = [EARLY_POOL, MID_POOL, LATE_POOL];
+    const r = Math.random() * 100;
+    const idx = r < mix[0] ? 0 : r < mix[0] + mix[1] ? 1 : 2;
+    for (let k = idx; k >= 0; k--) {        // fall back to earlier (built) pools
+        const t = weightedPick(pools[k]);
+        if (t) return t;
+    }
+    return 'drone';
+}
+
 export function createEnemy(type, position, floor) {
     const scene = getDungeonScene();
     if (!scene) return null;
@@ -672,7 +718,7 @@ export function createEnemy(type, position, floor) {
         turret: { hp: 40, dmg: 8, radius: 0.7, speed: 0, atkRate: 0.5 },
         wisp: { hp: 20, dmg: 30, radius: 0.4, speed: 4, explodeRange: 1.5 }
     };
-    const cfg = configs[type];
+    const cfg = configs[type] || enemyRegistry[type]?.config;
     
     // Visuals
     if (type === 'drone') {
@@ -733,10 +779,13 @@ export function createEnemy(type, position, floor) {
         const halo = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 12), new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.15 }));
         enemy.add(halo);
         enemy.add(new THREE.PointLight(0xff3300, 0.7, 4));
+    } else if (enemyRegistry[type]?.build) {
+        enemyRegistry[type].build(enemy, { bodyColor, glowColor, floor });
     }
     
     enemy.userData = {
         type,
+        floor,
         health: cfg.hp * hpScale,
         maxHealth: cfg.hp * hpScale,
         damage: cfg.dmg * dmgScale,
@@ -835,6 +884,8 @@ function updateEnemies(delta) {
             e.rotation.y += delta * 4;
             const wc = e.getObjectByName('wispCore');
             if (wc) wc.scale.setScalar(1 + Math.sin(Date.now() * 0.015) * 0.3);
+        } else if (enemyRegistry[d.type]?.update) {
+            enemyRegistry[d.type].update(e, delta, dist, toPlayer);
         }
         
         // Respect walls: slide along them instead of clipping through.
@@ -872,7 +923,12 @@ function updateEnemyProjectiles(delta) {
             continue;
         }
         
-        if (proj.position.distanceTo(player.position) < player.userData.radius + 0.2 && !player.userData.invulnerable) {
+        // Hit-test against the player's body column. The player origin is at the
+        // feet (y=0), so a plain distance check missed chest-height shots — most
+        // visibly a ground turret's, which never descend toward the feet.
+        const horiz = Math.hypot(proj.position.x - player.position.x, proj.position.z - player.position.z);
+        const vert = proj.position.y - player.position.y;
+        if (horiz < player.userData.radius + 0.3 && vert > 0 && vert < player.userData.height + 0.3 && !player.userData.invulnerable) {
             gameBridge.damagePlayer(proj.userData.damage);
             player.userData.invulnerable = true;
             player.userData.invulnerableTimer = 0.5;
@@ -910,7 +966,14 @@ function createExplosion(position, damage) {
     animate();
 }
 
-function damageEnemy(enemy, damage, source = 'magic') {
+function damageEnemy(enemy, damage, source = 'magic', fromPos = null) {
+    // Registered enemies can modify incoming damage (Bulwark deflects frontal
+    // magic, Hybrid's core takes extra magic). Returning <=0 means no hit landed.
+    const reg = enemyRegistry[enemy.userData.type];
+    if (reg?.onDamage) {
+        damage = reg.onDamage(enemy, damage, source, fromPos);
+        if (damage <= 0) return;
+    }
     enemy.userData.health -= damage;
     
     // Record what hit this enemy, for the kill-method (sword / magic / combo)
@@ -931,6 +994,16 @@ function damageEnemy(enemy, damage, source = 'magic') {
         if (idx > -1) {
             const hb = enemy.userData.hitBy;
             const method = (hb.sword && hb.magic) ? 'combo' : (hb.sword ? 'sword' : 'magic');
+            
+            // Some enemies transform on death (Splitter divides). If handled, remove
+            // quietly with no drop/XP — the spawned children carry the reward instead.
+            if (reg?.onDeath && reg.onDeath(enemy, source, method)) {
+                getDungeonScene()?.remove(enemy);
+                const j = enemies.indexOf(enemy);
+                if (j > -1) enemies.splice(j, 1);
+                return;
+            }
+            
             gameBridge.spawnCombatText?.(enemy.position, dmgN, { kill: true, method });
             
             // Kill method picks the drop's rarity: sword -> rarest, combo -> common
@@ -949,8 +1022,8 @@ function destroyEnemy(enemy, index, giveXP) {
     if (!scene) return;
     
     if (giveXP) {
-        const xpVals = { drone: 15, walker: 20, turret: 18, wisp: 12 };
-        const goldVals = { drone: 3, walker: 4, turret: 4, wisp: 2 };
+        const xpVals = { drone: 15, walker: 20, turret: 18, wisp: 12, hybrid: 30, bulwark: 28, capacitor: 25 };
+        const goldVals = { drone: 3, walker: 4, turret: 4, wisp: 2, hybrid: 6, bulwark: 6, capacitor: 5 };
         spawnOrbs(enemy.position, xpVals[enemy.userData.type] || 10, goldVals[enemy.userData.type] || 2);
     }
     
@@ -1073,20 +1146,18 @@ export function spawnEnemiesForRoom(roomType, floor, reduced = false) {
         const angle = (i / count) * Math.PI * 2;
         const dist = 4 + Math.random() * 3;
         const pos = new THREE.Vector3(roomData.x + Math.cos(angle) * dist, 0, roomData.z + Math.sin(angle) * dist);
-        const types = ['drone', 'walker', 'turret', 'wisp'];
-        createEnemy(types[Math.floor(Math.random() * types.length)], pos, floor);
+        createEnemy(pickEnemyType(floor), pos, floor);
     }
 }
 
 // Spawn `count` enemies in a ring around an arbitrary point. Used by the south
 // wing's sub-chambers, which aren't top-level rooms in roomData.
 export function spawnEnemiesAt(cx, cz, floor, count) {
-    const types = ['drone', 'walker', 'turret', 'wisp'];
     for (let i = 0; i < count; i++) {
         const angle = (i / count) * Math.PI * 2;
         const dist = 3 + Math.random() * 3;
         const pos = new THREE.Vector3(cx + Math.cos(angle) * dist, 0, cz + Math.sin(angle) * dist);
-        createEnemy(types[Math.floor(Math.random() * types.length)], pos, floor);
+        createEnemy(pickEnemyType(floor), pos, floor);
     }
 }
 
