@@ -5,10 +5,12 @@ import * as THREE from 'three';
 import { getDungeonScene } from './dungeon.js';
 import {
     registerBoss,
+    registerEnemy,
     getPlayer,
+    createHitEffect,
+    createEnemy,
     createEnemyProjectile,
     createShockwave,
-    createEnemy,
     getEnemies,
 } from './entities.js';
 
@@ -81,3 +83,173 @@ function updateEmperor(boss, delta) {
 }
 
 registerBoss('emperor', { create: createEmperor, update: updateEmperor });
+
+// ===========================================================================
+// LATE-GAME ENEMY POOL (Nightmare theme) — Splitter, Phase-wraith, Lurker.
+// ===========================================================================
+
+// ---- SPLITTER: a nightmare cell. A clean SWORD kill destroys it whole; a
+// MAGIC kill makes it DIVIDE into weaker cells (down to a generation cap).
+function buildSplitter(enemy, { bodyColor }) {
+    const CELL = 0x9fd84f;
+    const skin = new THREE.MeshStandardMaterial({ color: CELL, emissive: CELL, emissiveIntensity: 0.3, transparent: true, opacity: 0.85, roughness: 0.6 });
+    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 1), skin);
+    body.name = 'cell';
+    body.position.y = 0.5;
+    enemy.add(body);
+    for (let k = 0; k < 3; k++) {
+        const n = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), new THREE.MeshBasicMaterial({ color: 0x335500 }));
+        n.position.set((Math.random() - 0.5) * 0.4, 0.5 + (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4);
+        enemy.add(n);
+    }
+    enemy.add(new THREE.PointLight(CELL, 0.4, 4).translateY(0.5));
+}
+
+function updateSplitter(e, delta, dist, toPlayer) {
+    const player = getPlayer();
+    if (!player) return;
+    const d = e.userData;
+    if (dist > 1.0) {
+        const dir = toPlayer.clone().normalize();
+        e.position.x += dir.x * d.speed * delta;
+        e.position.z += dir.z * d.speed * delta;
+    }
+    const cell = e.getObjectByName('cell');
+    if (cell) {
+        const s = 1 + Math.sin(Date.now() * 0.008 + (d.floor || 0)) * 0.12;
+        cell.scale.set(s, 1 / s, s);   // wobble/squish
+    }
+}
+
+function spawnSplitterChildren(parent, gen) {
+    const floor = parent.userData.floor || 1;
+    const hpFrac = gen === 1 ? 0.5 : 0.3;
+    const scale = gen === 1 ? 0.7 : 0.5;
+    for (let k = 0; k < 2; k++) {
+        const off = new THREE.Vector3((Math.random() - 0.5) * 1.2, 0, (Math.random() - 0.5) * 1.2);
+        const child = createEnemy('splitter', parent.position.clone().add(off), floor);
+        if (!child) continue;
+        child.userData.gen = gen;
+        child.userData.maxHealth = Math.max(8, Math.round(child.userData.maxHealth * hpFrac));
+        child.userData.health = child.userData.maxHealth;
+        child.userData.radius *= scale;
+        child.scale.setScalar(scale);
+    }
+    createHitEffect(parent.position.clone(), 0x9fd84f);
+}
+
+registerEnemy('splitter', {
+    config: { hp: 40, dmg: 12, radius: 0.5, speed: 3.2 },
+    build: buildSplitter,
+    update: updateSplitter,
+    onDeath: (e, source) => {
+        const gen = e.userData.gen || 0;
+        if (source === 'magic' && gen < 2) {   // magic kill divides it (unless smallest)
+            spawnSplitterChildren(e, gen + 1);
+            return true;                         // handled: no drop, parent removed
+        }
+        return false;                            // sword kill (or smallest cell): dies whole
+    },
+});
+
+// ---- PHASE-WRAITH: cycles intangible/solid. Only damageable (and only
+// dangerous) when solid; lunges in those windows. Phases through shots otherwise.
+function buildWraith(enemy, { bodyColor }) {
+    const GHOST = 0xccddff;
+    const mat = new THREE.MeshStandardMaterial({ color: GHOST, emissive: GHOST, emissiveIntensity: 0.4, transparent: true, opacity: 0.85 });
+    enemy.add(new THREE.Mesh(new THREE.ConeGeometry(0.5, 2.0, 8), mat).translateY(1.0));
+    enemy.add(new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 10), mat).translateY(1.9));
+    [-0.1, 0.1].forEach(x => {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), new THREE.MeshBasicMaterial({ color: 0x3355ff }));
+        eye.position.set(x, 1.92, 0.22);
+        enemy.add(eye);
+    });
+    enemy.add(new THREE.PointLight(GHOST, 0.4, 5).translateY(1.3));
+}
+
+function updateWraith(e, delta, dist, toPlayer) {
+    const player = getPlayer();
+    if (!player) return;
+    const d = e.userData;
+    if (d.phase === undefined) { d.phase = 'phased'; d.phaseTimer = 1.5; d.baseDamage = d.damage; d.lungeCd = 1.0; }
+    d.phaseTimer -= delta;
+    if (d.phaseTimer <= 0) {
+        d.phase = d.phase === 'phased' ? 'solid' : 'phased';
+        d.phaseTimer = d.phase === 'solid' ? 1.6 : 2.0;
+    }
+    const solid = d.phase === 'solid';
+    e.traverse(c => { if (c.material && c.material.transparent) c.material.opacity = solid ? 0.9 : 0.22; });
+    d.damage = solid ? d.baseDamage : 0;   // harmless while intangible
+    e.lookAt(player.position.x, e.position.y, player.position.z);
+    e.position.y = Math.sin(Date.now() * 0.003) * 0.15;
+
+    if (solid) {
+        d.lungeCd -= delta;
+        let sp = d.speed;
+        if (d.lungeCd <= 0 && d.lungeCd > -0.4) sp = d.speed * 3.5;   // 0.4s lunge burst
+        if (d.lungeCd <= -0.4) d.lungeCd = 1.5;
+        if (dist > 0.8) {
+            const dir = toPlayer.clone().normalize();
+            e.position.x += dir.x * sp * delta;
+            e.position.z += dir.z * sp * delta;
+        }
+    } else if (dist > 2) {
+        const dir = toPlayer.clone().normalize();   // drift slowly while phased
+        e.position.x += dir.x * d.speed * 0.4 * delta;
+        e.position.z += dir.z * d.speed * 0.4 * delta;
+    }
+}
+
+registerEnemy('wraith', {
+    config: { hp: 35, dmg: 18, radius: 0.5, speed: 3 },
+    build: buildWraith,
+    update: updateWraith,
+    onDamage: (e, damage, source) => {
+        if (e.userData.phase === 'phased') {
+            createHitEffect(e.position.clone(), 0xccddff);   // shot passes through
+            return 0;
+        }
+        return damage;
+    },
+});
+
+// ---- LURKER: fast ambusher, semi-invisible at range (only its eyes glint),
+// opaque as it closes in. Watch for the shimmer.
+function buildLurker(enemy, { bodyColor }) {
+    const SHADE = 0x7733bb;
+    const mat = new THREE.MeshStandardMaterial({ color: 0x1a0d2e, emissive: SHADE, emissiveIntensity: 0.5, transparent: true, opacity: 0.5, roughness: 0.5 });
+    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.45, 0), mat);
+    body.name = 'shade';
+    body.scale.set(1.3, 0.7, 1.0);
+    body.position.y = 0.6;
+    enemy.add(body);
+    [-0.12, 0.12].forEach(x => {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), new THREE.MeshBasicMaterial({ color: 0xff3366 }));
+        eye.position.set(x, 0.65, 0.4);
+        enemy.add(eye);
+    });
+    enemy.add(new THREE.PointLight(SHADE, 0.3, 3).translateY(0.6));
+}
+
+function updateLurker(e, delta, dist, toPlayer) {
+    const player = getPlayer();
+    if (!player) return;
+    const d = e.userData;
+    if (dist > 0.9) {
+        const dir = toPlayer.clone().normalize();
+        e.position.x += dir.x * d.speed * delta;
+        e.position.z += dir.z * d.speed * delta;
+    }
+    e.lookAt(player.position.x, e.position.y, player.position.z);
+    e.position.y = 0.1 + Math.sin(Date.now() * 0.006) * 0.05;
+    // Opaque up close, near-invisible at range (the eyes stay as the shimmer).
+    const vis = Math.max(0.12, Math.min(1, (10 - dist) / 8));
+    const shade = e.getObjectByName('shade');
+    if (shade) shade.material.opacity = vis;
+}
+
+registerEnemy('lurker', {
+    config: { hp: 30, dmg: 16, radius: 0.45, speed: 5.5 },
+    build: buildLurker,
+    update: updateLurker,
+});
