@@ -717,11 +717,22 @@ export function createEnemy(type, position, floor) {
         ring.position.y = 0.9;
         enemy.add(ring);
     } else if (type === 'wisp') {
-        const core = new THREE.Mesh(new THREE.SphereGeometry(0.25, 12, 12), new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.9 }));
+        // A spiky kamikaze mote with a hot, unstable core — reads as a threat,
+        // not the smooth round glow of the player's magic bolt.
+        const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.2), new THREE.MeshBasicMaterial({ color: 0xff2a00 }));
+        core.name = 'wispCore';
         enemy.add(core);
-        const glow = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 12), new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.3 }));
-        enemy.add(glow);
-        enemy.add(new THREE.PointLight(glowColor, 0.5, 4));
+        const spikeMat = new THREE.MeshStandardMaterial({ color: bodyColor, emissive: glowColor, emissiveIntensity: 0.7, metalness: 0.4, roughness: 0.3 });
+        [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0.7, 0.7, 0.7], [-0.7, -0.7, 0.7], [0.7, -0.7, -0.7], [-0.7, 0.7, -0.7]].forEach(dir => {
+            const v = new THREE.Vector3(dir[0], dir[1], dir[2]).normalize();
+            const spike = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.34, 4), spikeMat);
+            spike.position.copy(v.clone().multiplyScalar(0.26));
+            spike.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v);
+            enemy.add(spike);
+        });
+        const halo = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 12), new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.15 }));
+        enemy.add(halo);
+        enemy.add(new THREE.PointLight(0xff3300, 0.7, 4));
     }
     
     enemy.userData = {
@@ -820,6 +831,10 @@ function updateEnemies(delta) {
                 continue;
             }
             e.position.y = 1 + Math.sin(Date.now() * 0.01) * 0.2;
+            e.rotation.x += delta * 3;
+            e.rotation.y += delta * 4;
+            const wc = e.getObjectByName('wispCore');
+            if (wc) wc.scale.setScalar(1 + Math.sin(Date.now() * 0.015) * 0.3);
         }
         
         // Respect walls: slide along them instead of clipping through.
