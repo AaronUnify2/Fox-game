@@ -405,14 +405,76 @@ function ejectFromWalls(pos, radius, walls) {
     return normal;
 }
 
+// Read-only: does a circle at (x,z) penetrate any wall? Used for the player's
+// swept anti-tunnel check (sampling the path) and to confirm a spot is clear.
+function overlapsAnyWall(x, z, radius, walls) {
+    const r2 = radius * radius - 1e-4;
+    for (const obj of walls) {
+        if (!obj.userData?.isWall) continue;
+        const g = obj.geometry.parameters;
+        if (g.radiusTop !== undefined || g.radiusBottom !== undefined) {
+            const pr = Math.max(g.radiusTop || 0, g.radiusBottom || 0);
+            const dx = x - obj.position.x, dz = z - obj.position.z;
+            if (dx * dx + dz * dz < (pr + radius) * (pr + radius) - 1e-4) return true;
+            continue;
+        }
+        const hw = (g.width || 0) / 2, hd = (g.depth || 0) / 2;
+        if (hw === 0 || hd === 0) continue;
+        const c = Math.cos(obj.rotation.y), s = Math.sin(obj.rotation.y);
+        const dx = x - obj.position.x, dz = z - obj.position.z;
+        const lx = dx * c - dz * s, lz = dx * s + dz * c;
+        const ox = lx - Math.max(-hw, Math.min(lx, hw));
+        const oz = lz - Math.max(-hd, Math.min(lz, hd));
+        if (ox * ox + oz * oz < r2) return true;   // ox=oz=0 (center inside) counts
+    }
+    return false;
+}
+
 function checkWallCollision() {
     const scene = player.parent;   // the scene the player is currently in (town or dungeon)
     if (!scene) return;
-    player.userData.canWallJump = false;
-    const normal = ejectFromWalls(player.position, player.userData.radius, collectWalls(scene));
-    if (normal && !player.userData.onGround) {
-        player.userData.canWallJump = true;
-        player.userData.lastWallNormal = new THREE.Vector3(normal.x, 0, normal.z);
+    const ud = player.userData;
+    const r = ud.radius;
+    ud.canWallJump = false;
+    const walls = collectWalls(scene);
+
+    // 1) Multi-pass ejection: one push can shove the player into a neighbouring
+    // segment, so repeat until clear (converges at seams/corners).
+    let normal = null;
+    for (let pass = 0; pass < 4; pass++) {
+        const n = ejectFromWalls(player.position, r, walls);
+        if (n) normal = n; else break;
+    }
+
+    // 2) Swept anti-tunnel: if the straight path from last frame's clear spot to
+    // here cuts through solid wall, the player slipped through a joint — snap back.
+    const safe = ud.lastSafePos;
+    if (safe) {
+        const dx = player.position.x - safe.x, dz = player.position.z - safe.z;
+        const dlen = Math.hypot(dx, dz);
+        if (dlen > 1e-3 && dlen <= 3) {   // ignore teleports (floor loads, spawns)
+            const steps = Math.min(24, Math.ceil(dlen / (r * 0.4)));
+            for (let k = 1; k < steps; k++) {
+                const t = k / steps;
+                if (overlapsAnyWall(safe.x + dx * t, safe.z + dz * t, r, walls)) {
+                    player.position.x = safe.x;
+                    player.position.z = safe.z;
+                    ejectFromWalls(player.position, r, walls);
+                    break;
+                }
+            }
+        }
+    }
+
+    // 3) Remember this spot as the fallback only if it is genuinely clear.
+    if (!overlapsAnyWall(player.position.x, player.position.z, r, walls)) {
+        if (ud.lastSafePos) { ud.lastSafePos.x = player.position.x; ud.lastSafePos.z = player.position.z; }
+        else ud.lastSafePos = { x: player.position.x, z: player.position.z };
+    }
+
+    if (normal && !ud.onGround) {
+        ud.canWallJump = true;
+        ud.lastWallNormal = new THREE.Vector3(normal.x, 0, normal.z);
     }
 }
 
