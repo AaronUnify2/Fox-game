@@ -1185,7 +1185,8 @@ export function spawnMiniBoss(floor) {
     const roomData = getRoomData('west');
     const pos = new THREE.Vector3(roomData.x, 0, roomData.z);
     
-    const type = floor <= 3 ? 'sentinel' : floor <= 6 ? 'hollow' : floor <= 9 ? 'dreamer' : 'emperor';
+    const type = floor <= 3 ? 'sentinel' : floor <= 6 ? 'hollow' : floor <= 9 ? 'dreamer' :
+                 floor <= 12 ? 'emperor' : floor <= 15 ? 'amalgam' : floor <= 18 ? 'progenitor' : 'warden';
     const tier = ((floor - 1) % 3) + 1;
     
     const def = bossRegistry[type];
@@ -1363,6 +1364,10 @@ export function createShockwave(position, tier) {
 }
 
 function damageBoss(boss, damage) {
+    // Per-boss armor (0..1) blocks a fraction; 1 = fully immune (e.g. phased Warden,
+    // shielded Amalgam cores, mid-bud Progenitor).
+    damage *= (1 - (boss.userData.armor || 0));
+    if (damage <= 0.5) { createHitEffect(boss.position.clone(), 0x88aaff); return; }
     boss.userData.health -= damage;
     gameBridge.spawnCombatText?.(boss.position, Math.round(damage), {});
     boss.traverse(c => { if (c.material?.emissive) { const orig = c.material.emissive.getHex(); c.material.emissive.setHex(0xffffff); setTimeout(() => c.material.emissive.setHex(orig), 100); } });
@@ -1372,13 +1377,14 @@ function damageBoss(boss, damage) {
 function destroyBoss() {
     const scene = getDungeonScene();
     if (!currentBoss) return;
-    const xpVals = { sentinel: 100, hollow: 150, dreamer: 200, emperor: 500 };
+    const xpVals = { sentinel: 100, hollow: 150, dreamer: 200, emperor: 500, amalgam: 600, progenitor: 700, warden: 850 };
     const bossXP = xpVals[currentBoss.userData.type] || 100;
     spawnOrbs(currentBoss.position, bossXP, Math.round(bossXP / 4));
     if (currentBoss.userData.drones) currentBoss.userData.drones.forEach(d => scene.remove(d));
     if (currentBoss.userData.mirrors) currentBoss.userData.mirrors.forEach(m => scene.remove(m));
     if (currentBoss.userData.zones) currentBoss.userData.zones.forEach(z => scene.remove(z));
     if (currentBoss.userData.trails) currentBoss.userData.trails.forEach(t => scene.remove(t));
+    if (currentBoss.userData.cores) currentBoss.userData.cores.forEach(c => scene.remove(c));
     createHitEffect(currentBoss.position.clone(), 0xffffff);
     scene.remove(currentBoss);
     currentBoss = null;
@@ -1596,7 +1602,7 @@ function checkEnemyCollision() {
         }
     }
     
-    if (currentBoss && player.position.distanceTo(currentBoss.position) < player.userData.radius + currentBoss.userData.radius) {
+    if (currentBoss && (currentBoss.userData.armor || 0) < 1 && player.position.distanceTo(currentBoss.position) < player.userData.radius + currentBoss.userData.radius) {
         gameBridge.damagePlayer(15);
         player.userData.invulnerable = true;
         player.userData.invulnerableTimer = 0.5;
