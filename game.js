@@ -73,6 +73,7 @@ function applyTestingOverrides() {
 
 // Upgrade costs (exponential but reasonable)
 // Playing all 10 floors = ~2500 XP, should get ~80% of max upgrades
+const MAX_FLOOR = 22;   // 21-floor spine + the final-boss floor (22)
 const UPGRADE_MAX_LEVEL = 10;
 const getUpgradeCost = (level) => Math.floor(50 * Math.pow(1.4, level)); // 50, 70, 98, 137, 192...
 
@@ -434,8 +435,8 @@ function floorComplete() {
     
     saveGame();
     
-    if (floor >= 10) {
-        // Game complete!
+    if (floor >= MAX_FLOOR) {
+        // Final floor cleared — game complete.
         showVictory();
     } else {
         // Show floor complete UI
@@ -1058,7 +1059,7 @@ export function showFloorSelect() {
     const menu = document.getElementById('floor-select');
     const completed = gameData.progress.floorsCompleted;
     const maxCompleted = completed.length ? Math.max(...completed) : 0;
-    const maxAccessible = TESTING_UNLOCK_ALL_FLOORS ? 10 : Math.min(maxCompleted + 1, 10);   // next floor after the highest cleared
+    const maxAccessible = TESTING_UNLOCK_ALL_FLOORS ? MAX_FLOOR : Math.min(maxCompleted + 1, MAX_FLOOR);   // next floor after the highest cleared
     
     let buttons = '';
     for (let i = 1; i <= maxAccessible; i++) {
