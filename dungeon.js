@@ -639,7 +639,7 @@ function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
     // Finer segments = smoother ring and shorter doorway jambs.
     const segments = Math.max(12, Math.min(48, Math.round((2 * Math.PI * radius) / 3)));
     const segArc = (2 * Math.PI) / segments;
-    const segLen = (2 * Math.PI * radius / segments) * 1.04; // slight overlap = no corner gaps
+    const segLen = (2 * Math.PI * radius / segments) * 1.12; // generous overlap = no seam gaps at joints
     const openHalf = (gapWidth / 2) / radius;                // half-width of a doorway, in radians
 
     const keptEdges = []; // gap-facing endpoints of the segments next to each doorway
