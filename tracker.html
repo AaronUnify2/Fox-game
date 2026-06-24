@@ -86,6 +86,7 @@
                     <b id="editingChannel">Melody</b> ·
                     pattern <b id="editingPattern">A</b>
                 </span>
+                <span class="hint" id="chordHint">Tip: tap multiple rows in one column for a chord</span>
                 <span class="octave-ctrl" id="octaveCtrl">
                     <button class="ghost-btn sm" id="octDown">Oct −</button>
                     <button class="ghost-btn sm" id="octUp">Oct +</button>
@@ -101,6 +102,21 @@
     <div class="modal" id="channelModal">
         <div class="modal-content">
             <div class="modal-title" id="channelModalTitle">Channel</div>
+
+            <!-- Instrument -->
+            <div class="form-group">
+                <label>Instrument</label>
+                <div class="seg seg-wrap" id="instrumentSeg">
+                    <button data-type="pulse">Pulse</button>
+                    <button data-type="triangle">Triangle</button>
+                    <button data-type="bell">Bell</button>
+                    <button data-type="strings">Strings</button>
+                    <button data-type="choir">Choir</button>
+                    <button data-type="noise">Drums</button>
+                </div>
+            </div>
+
+            <!-- Pulse: duty -->
             <div class="form-group" id="dutyGroup">
                 <label>Duty cycle (pulse tone)</label>
                 <div class="seg" id="dutySeg">
@@ -110,10 +126,51 @@
                     <button data-duty="0.75">75%</button>
                 </div>
             </div>
+
+            <!-- Bell: ring-out -->
+            <div class="form-group" id="bellDecayGroup">
+                <label>Bell ring-out <span id="bellDecayVal">1.3</span>×</label>
+                <input type="range" id="bellDecayRange" min="0.4" max="2.5" step="0.1" value="1.3">
+            </div>
+
+            <!-- Strings -->
+            <div class="form-group" id="strAttackGroup">
+                <label>Strings attack <span id="strAttackVal">0.06</span>s</label>
+                <input type="range" id="strAttackRange" min="0.01" max="0.40" step="0.01" value="0.06">
+            </div>
+            <div class="form-group" id="strReleaseGroup">
+                <label>Strings release <span id="strReleaseVal">0.40</span>s</label>
+                <input type="range" id="strReleaseRange" min="0.10" max="1.20" step="0.05" value="0.40">
+            </div>
+            <div class="form-group" id="strDetuneGroup">
+                <label>Ensemble detune <span id="strDetuneVal">8</span>¢</label>
+                <input type="range" id="strDetuneRange" min="0" max="20" step="1" value="8">
+            </div>
+
+            <!-- Choir -->
+            <div class="form-group" id="choVowelGroup">
+                <label>Choir vowel</label>
+                <div class="seg" id="vowelSeg">
+                    <button data-vowel="ah">Ah</button>
+                    <button data-vowel="oo">Oo</button>
+                    <button data-vowel="ee">Ee</button>
+                </div>
+            </div>
+            <div class="form-group" id="choAttackGroup">
+                <label>Choir attack <span id="choAttackVal">0.07</span>s</label>
+                <input type="range" id="choAttackRange" min="0.01" max="0.40" step="0.01" value="0.07">
+            </div>
+            <div class="form-group" id="choReleaseGroup">
+                <label>Choir release <span id="choReleaseVal">0.50</span>s</label>
+                <input type="range" id="choReleaseRange" min="0.10" max="1.20" step="0.05" value="0.50">
+            </div>
+
+            <!-- Volume (always) -->
             <div class="form-group">
                 <label>Volume <span id="volVal">0.80</span></label>
                 <input type="range" id="volRange" min="0" max="1" step="0.05" value="0.8">
             </div>
+
             <div class="button-group">
                 <button class="secondary" id="channelModalClose">Done</button>
             </div>
