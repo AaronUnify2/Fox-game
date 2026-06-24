@@ -105,6 +105,11 @@ function ensureTypeDefaults(ch) {
         if (ch.attack == null) ch.attack = 0.07;
         if (ch.release == null) ch.release = 0.5;
     }
+    // echo applies to any instrument
+    if (ch.echo == null) ch.echo = false;
+    if (ch.echoBeats == null) ch.echoBeats = 0.5;
+    if (ch.echoFeedback == null) ch.echoFeedback = 0.4;
+    if (ch.echoMix == null) ch.echoMix = 0.35;
 }
 
 // ---------- Persistence ----------
@@ -131,6 +136,12 @@ function channelParams(c) {
     if (c.type === 'bell') out.decay = c.decay;
     if (c.type === 'strings') { out.attack = c.attack; out.release = c.release; out.detune = c.detune; }
     if (c.type === 'choir') { out.vowel = c.vowel; out.attack = c.attack; out.release = c.release; }
+    if (c.echo) {
+        out.echo = true;
+        out.echoBeats = c.echoBeats;
+        out.echoFeedback = c.echoFeedback;
+        out.echoMix = c.echoMix;
+    }
     return out;
 }
 
@@ -501,7 +512,26 @@ function openChannelModal(id) {
 
     $('volRange').value = ch.volume;
     $('volVal').textContent = Number(ch.volume).toFixed(2);
+    renderEchoControls(ch);
     $('channelModal').classList.add('open');
+}
+
+// Echo controls apply to any instrument. The detail rows only show when echo
+// is on, to keep the modal compact.
+function renderEchoControls(ch) {
+    document.querySelectorAll('#echoSeg button').forEach(b =>
+        b.classList.toggle('active', (b.dataset.echo === '1') === !!ch.echo));
+    const show = !!ch.echo;
+    ['echoBeatsGroup', 'echoFbGroup', 'echoMixGroup'].forEach(gid =>
+        $(gid).classList.toggle('hidden', !show));
+    if (show) {
+        document.querySelectorAll('#echoBeatsSeg button').forEach(b =>
+            b.classList.toggle('active', Math.abs(Number(b.dataset.beats) - ch.echoBeats) < 0.001));
+        $('echoFbRange').value = ch.echoFeedback;
+        $('echoFbVal').textContent = Number(ch.echoFeedback).toFixed(2);
+        $('echoMixRange').value = ch.echoMix;
+        $('echoMixVal').textContent = Number(ch.echoMix).toFixed(2);
+    }
 }
 
 function closeChannelModal() {
@@ -712,6 +742,30 @@ function wireEvents() {
         setParam('attack', Number(e.target.value), 'choAttackVal', v => v.toFixed(2)));
     $('choReleaseRange').addEventListener('input', (e) =>
         setParam('release', Number(e.target.value), 'choReleaseVal', v => v.toFixed(2)));
+
+    // Channel modal — echo (any instrument)
+    $('echoSeg').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-echo]');
+        if (!b || !modalChannelId) return;
+        const ch = song.channels.find(c => c.id === modalChannelId);
+        ch.echo = b.dataset.echo === '1';
+        ensureTypeDefaults(ch);
+        renderEchoControls(ch);
+        persist();
+    });
+    $('echoBeatsSeg').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-beats]');
+        if (!b || !modalChannelId) return;
+        const ch = song.channels.find(c => c.id === modalChannelId);
+        ch.echoBeats = Number(b.dataset.beats);
+        document.querySelectorAll('#echoBeatsSeg button').forEach(x => x.classList.toggle('active', x === b));
+        $('echoBeatsVal').textContent = b.textContent;
+        persist();
+    });
+    $('echoFbRange').addEventListener('input', (e) =>
+        setParam('echoFeedback', Number(e.target.value), 'echoFbVal', v => v.toFixed(2)));
+    $('echoMixRange').addEventListener('input', (e) =>
+        setParam('echoMix', Number(e.target.value), 'echoMixVal', v => v.toFixed(2)));
 
     // Channel modal — volume + close
     $('volRange').addEventListener('input', (e) => {
