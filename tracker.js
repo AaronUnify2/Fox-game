@@ -14,6 +14,21 @@ const PITCH_LOW = 24;    // C1 (lowest selectable)
 const PITCH_HIGH = 96;   // C7 (highest selectable)
 const WINDOW_NOTES = 24; // show two octaves at a time
 
+// Channel instruments and which tuning controls each one shows.
+const INSTRUMENT_PARAM_GROUPS = {
+    pulse:    ['dutyGroup'],
+    triangle: [],
+    bell:     ['bellDecayGroup'],
+    strings:  ['strAttackGroup', 'strReleaseGroup', 'strDetuneGroup'],
+    choir:    ['choVowelGroup', 'choAttackGroup', 'choReleaseGroup'],
+    noise:    []
+};
+const ALL_PARAM_GROUPS = [
+    'dutyGroup', 'bellDecayGroup',
+    'strAttackGroup', 'strReleaseGroup', 'strDetuneGroup',
+    'choVowelGroup', 'choAttackGroup', 'choReleaseGroup'
+];
+
 // Starter song so the very first launch makes sound.
 const STARTER = {
     version: 1, title: 'Town Theme', tempo: 120, stepsPerBeat: 4, patternLength: 16,
@@ -55,6 +70,43 @@ const player = new ChiptunePlayer();
 
 const $ = (id) => document.getElementById(id);
 
+// ---------- Cell helpers (polyphony) ----------
+// A cell may be a single value, an array of values, or null.
+function cellHas(val, x) {
+    if (val === null || val === undefined) return false;
+    return Array.isArray(val) ? val.includes(x) : val === x;
+}
+// Add/remove a value from a cell. Singles stay bare numbers; chords become
+// sorted arrays; empty becomes null.
+function toggleInCell(cell, x) {
+    let notes = (cell === null || cell === undefined)
+        ? [] : (Array.isArray(cell) ? cell.slice() : [cell]);
+    const i = notes.indexOf(x);
+    if (i >= 0) notes.splice(i, 1);
+    else notes.push(x);
+    if (notes.length === 0) return null;
+    if (notes.length === 1) return notes[0];
+    notes.sort((a, b) => a - b);
+    return notes;
+}
+function cloneCell(v) { return Array.isArray(v) ? v.slice() : v; }
+
+// Fill in sensible defaults for whatever instrument a channel is set to.
+function ensureTypeDefaults(ch) {
+    if (ch.type === 'pulse' && ch.duty == null) ch.duty = 0.5;
+    if (ch.type === 'bell' && ch.decay == null) ch.decay = 1.3;
+    if (ch.type === 'strings') {
+        if (ch.attack == null) ch.attack = 0.06;
+        if (ch.release == null) ch.release = 0.4;
+        if (ch.detune == null) ch.detune = 8;
+    }
+    if (ch.type === 'choir') {
+        if (ch.vowel == null) ch.vowel = 'ah';
+        if (ch.attack == null) ch.attack = 0.07;
+        if (ch.release == null) ch.release = 0.5;
+    }
+}
+
 // ---------- Persistence ----------
 function loadSongs() {
     try {
@@ -72,6 +124,16 @@ function saveSongs() {
     catch (e) { console.warn('save failed', e); }
 }
 
+// Per-instrument params that should be written out for a channel.
+function channelParams(c) {
+    const out = {};
+    if (c.type === 'pulse') out.duty = c.duty;
+    if (c.type === 'bell') out.decay = c.decay;
+    if (c.type === 'strings') { out.attack = c.attack; out.release = c.release; out.detune = c.detune; }
+    if (c.type === 'choir') { out.vowel = c.vowel; out.attack = c.attack; out.release = c.release; }
+    return out;
+}
+
 function serializeSong(s) {
     return {
         version: s.version || 1,
@@ -83,12 +145,13 @@ function serializeSong(s) {
         loopStart: s.loopStart || 0,
         channels: s.channels.map(c => ({
             id: c.id, name: c.name, type: c.type,
-            ...(c.type === 'pulse' ? { duty: c.duty } : {}),
+            ...channelParams(c),
             volume: c.volume, muted: !!c.muted
         })),
         patterns: s.patterns.map(p => ({
             id: p.id, name: p.name,
-            cells: Object.fromEntries(s.channels.map(c => [c.id, p.cells[c.id].slice()]))
+            // map(cloneCell) deep-copies chord arrays so saves don't alias
+            cells: Object.fromEntries(s.channels.map(c => [c.id, p.cells[c.id].map(cloneCell)]))
         })),
         order: s.order.slice()
     };
@@ -108,9 +171,11 @@ function selectSong(name) {
     if (player.isPlaying) stopPlayback();
     currentName = name;
     song = normalizeSong(songs[name]);
+    for (const ch of song.channels) ensureTypeDefaults(ch);
     editPatternId = song.order[0] || song.patterns[0].id;
     if (!song.patternsById[editPatternId]) editPatternId = song.patterns[0].id;
     editChannelId = 'pulse1';
+    if (!song.channels.find(c => c.id === editChannelId)) editChannelId = song.channels[0].id;
     octaveBase = 48;
 
     $('songTitle').textContent = song.title;
@@ -157,9 +222,11 @@ function renderChannels() {
     for (const ch of song.channels) {
         const row = document.createElement('div');
         row.className = 'channel-row' + (ch.id === editChannelId ? ' selected' : '') + (ch.muted ? ' muted' : '');
+        const typeLabel = ch.type === 'noise' ? 'drums' : ch.type;
         row.innerHTML = `
             <span class="channel-dot" style="background:${colorById[ch.id] || '#888'}"></span>
             <span class="channel-name">${ch.name}</span>
+            <span class="channel-type">${typeLabel}</span>
             <button class="mini-btn ${ch.muted ? '' : 'on'}" data-act="mute">${ch.muted ? 'muted' : 'on'}</button>
             <button class="mini-btn" data-act="cfg">⚙</button>
         `;
@@ -243,7 +310,7 @@ function renderGrid() {
         for (const drumIdx of order) {
             frag.appendChild(cellDiv('gcell lcell', DRUMS[drumIdx]));
             for (let s = 0; s < steps; s++) {
-                const active = pattern.cells.noise[s] === drumIdx;
+                const active = cellHas(pattern.cells.noise[s], drumIdx);
                 const c = cellDiv('gcell cell' + (s % spb === 0 ? ' beat' : '') + (active ? ' active' : ''), '');
                 c.dataset.step = s; c.dataset.drum = drumIdx;
                 frag.appendChild(c);
@@ -256,7 +323,7 @@ function renderGrid() {
             const black = isBlackKey(m);
             frag.appendChild(cellDiv('gcell lcell' + (black ? ' black' : ''), midiToName(m)));
             for (let s = 0; s < steps; s++) {
-                const active = pattern.cells[ch.id][s] === m;
+                const active = cellHas(pattern.cells[ch.id][s], m);
                 const c = cellDiv('gcell cell' + (black ? ' black' : '') + (s % spb === 0 ? ' beat' : '') + (active ? ' active' : ''), '');
                 c.dataset.step = s; c.dataset.midi = m;
                 frag.appendChild(c);
@@ -282,8 +349,8 @@ function refreshColumn(step) {
     const cells = $('grid').querySelectorAll(`.cell[data-step="${step}"]`);
     cells.forEach(c => {
         let active;
-        if (ch.type === 'noise') active = pattern.cells.noise[step] === Number(c.dataset.drum);
-        else active = pattern.cells[ch.id][step] === Number(c.dataset.midi);
+        if (ch.type === 'noise') active = cellHas(pattern.cells.noise[step], Number(c.dataset.drum));
+        else active = cellHas(pattern.cells[ch.id][step], Number(c.dataset.midi));
         c.classList.toggle('active', active);
     });
 }
@@ -298,13 +365,15 @@ function onGridTap(e) {
 
     if (ch.type === 'noise') {
         const drum = Number(cell.dataset.drum);
-        pattern.cells.noise[step] = (pattern.cells.noise[step] === drum) ? null : drum;
-        if (pattern.cells.noise[step] !== null) player.preview('noise', drum);
+        const after = toggleInCell(pattern.cells.noise[step], drum);
+        pattern.cells.noise[step] = after;
+        if (cellHas(after, drum)) player.preview('noise', drum);
     } else {
         const midi = Number(cell.dataset.midi);
         const arr = pattern.cells[ch.id];
-        arr[step] = (arr[step] === midi) ? null : midi; // monophonic: replaces
-        if (arr[step] !== null) player.preview(ch.id, midi);
+        const after = toggleInCell(arr[step], midi);
+        arr[step] = after;
+        if (cellHas(after, midi)) player.preview(ch.id, midi);
     }
     refreshColumn(step);
     persist();
@@ -369,7 +438,7 @@ function addPattern(copyFromId = null) {
     if (copyFromId && song.patternsById[copyFromId]) {
         const src = song.patternsById[copyFromId];
         pat = { id, name, cells: {} };
-        for (const ch of song.channels) pat.cells[ch.id] = src.cells[ch.id].slice();
+        for (const ch of song.channels) pat.cells[ch.id] = src.cells[ch.id].map(cloneCell);
     } else {
         pat = emptyPattern(id, name, song.channels, song.patternLength);
     }
@@ -395,21 +464,87 @@ function deletePattern(id) {
 function openChannelModal(id) {
     modalChannelId = id;
     const ch = song.channels.find(c => c.id === id);
+    ensureTypeDefaults(ch);
     $('channelModalTitle').textContent = ch.name + ' settings';
-    const isPulse = ch.type === 'pulse';
-    $('dutyGroup').classList.toggle('hidden', !isPulse);
-    if (isPulse) {
+
+    // Instrument selector
+    document.querySelectorAll('#instrumentSeg button').forEach(b => {
+        b.classList.toggle('active', b.dataset.type === ch.type);
+    });
+
+    // Show only the param groups relevant to this instrument
+    ALL_PARAM_GROUPS.forEach(gid => $(gid).classList.add('hidden'));
+    (INSTRUMENT_PARAM_GROUPS[ch.type] || []).forEach(gid => $(gid).classList.remove('hidden'));
+
+    // Populate control values
+    if (ch.type === 'pulse') {
         document.querySelectorAll('#dutySeg button').forEach(b => {
             b.classList.toggle('active', Math.abs(Number(b.dataset.duty) - ch.duty) < 0.001);
         });
     }
+    if (ch.type === 'bell') {
+        $('bellDecayRange').value = ch.decay;
+        $('bellDecayVal').textContent = Number(ch.decay).toFixed(1);
+    }
+    if (ch.type === 'strings') {
+        $('strAttackRange').value = ch.attack;   $('strAttackVal').textContent = Number(ch.attack).toFixed(2);
+        $('strReleaseRange').value = ch.release;  $('strReleaseVal').textContent = Number(ch.release).toFixed(2);
+        $('strDetuneRange').value = ch.detune;    $('strDetuneVal').textContent = String(Math.round(ch.detune));
+    }
+    if (ch.type === 'choir') {
+        document.querySelectorAll('#vowelSeg button').forEach(b => {
+            b.classList.toggle('active', b.dataset.vowel === ch.vowel);
+        });
+        $('choAttackRange').value = ch.attack;   $('choAttackVal').textContent = Number(ch.attack).toFixed(2);
+        $('choReleaseRange').value = ch.release;  $('choReleaseVal').textContent = Number(ch.release).toFixed(2);
+    }
+
     $('volRange').value = ch.volume;
     $('volVal').textContent = Number(ch.volume).toFixed(2);
     $('channelModal').classList.add('open');
 }
+
 function closeChannelModal() {
     $('channelModal').classList.remove('open');
     modalChannelId = null;
+}
+
+// Change a channel's instrument. Crossing the pitched <-> drums boundary
+// clears the channel (note values and drum indices aren't interchangeable).
+function applyInstrumentChange(newType) {
+    if (!modalChannelId) return;
+    const ch = song.channels.find(c => c.id === modalChannelId);
+    if (!ch || ch.type === newType) return;
+
+    const crossing = (ch.type === 'noise') !== (newType === 'noise');
+    if (crossing) {
+        const ok = confirm('Switching between Drums and a pitched instrument clears this channel\u2019s steps. Continue?');
+        if (!ok) {
+            // revert the segment highlight to the current type
+            document.querySelectorAll('#instrumentSeg button').forEach(b =>
+                b.classList.toggle('active', b.dataset.type === ch.type));
+            return;
+        }
+        for (const p of song.patterns) {
+            p.cells[ch.id] = new Array(song.patternLength).fill(null);
+        }
+    }
+
+    ch.type = newType;
+    ensureTypeDefaults(ch);
+    persist();
+    openChannelModal(ch.id); // rebuild the modal for the new instrument
+    renderChannels();
+    if (ch.id === editChannelId) { renderCanvasBar(); renderGrid(); }
+}
+
+// Set a numeric instrument parameter and update its inline readout.
+function setParam(key, val, labelId, fmt) {
+    if (!modalChannelId) return;
+    const ch = song.channels.find(c => c.id === modalChannelId);
+    ch[key] = val;
+    if (labelId) $(labelId).textContent = fmt ? fmt(val) : String(val);
+    persist();
 }
 
 // ---------- Import / export ----------
@@ -535,7 +670,14 @@ function wireEvents() {
         if (song.order.length > 1) { song.order.pop(); persist(); renderOrder(); }
     });
 
-    // Channel modal
+    // Channel modal — instrument picker
+    $('instrumentSeg').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-type]');
+        if (!b) return;
+        applyInstrumentChange(b.dataset.type);
+    });
+
+    // Channel modal — pulse duty
     $('dutySeg').addEventListener('click', (e) => {
         const b = e.target.closest('button[data-duty]');
         if (!b || !modalChannelId) return;
@@ -544,6 +686,34 @@ function wireEvents() {
         document.querySelectorAll('#dutySeg button').forEach(x => x.classList.toggle('active', x === b));
         persist();
     });
+
+    // Channel modal — bell
+    $('bellDecayRange').addEventListener('input', (e) =>
+        setParam('decay', Number(e.target.value), 'bellDecayVal', v => v.toFixed(1)));
+
+    // Channel modal — strings
+    $('strAttackRange').addEventListener('input', (e) =>
+        setParam('attack', Number(e.target.value), 'strAttackVal', v => v.toFixed(2)));
+    $('strReleaseRange').addEventListener('input', (e) =>
+        setParam('release', Number(e.target.value), 'strReleaseVal', v => v.toFixed(2)));
+    $('strDetuneRange').addEventListener('input', (e) =>
+        setParam('detune', Number(e.target.value), 'strDetuneVal', v => String(Math.round(v))));
+
+    // Channel modal — choir
+    $('vowelSeg').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-vowel]');
+        if (!b || !modalChannelId) return;
+        const ch = song.channels.find(c => c.id === modalChannelId);
+        ch.vowel = b.dataset.vowel;
+        document.querySelectorAll('#vowelSeg button').forEach(x => x.classList.toggle('active', x === b));
+        persist();
+    });
+    $('choAttackRange').addEventListener('input', (e) =>
+        setParam('attack', Number(e.target.value), 'choAttackVal', v => v.toFixed(2)));
+    $('choReleaseRange').addEventListener('input', (e) =>
+        setParam('release', Number(e.target.value), 'choReleaseVal', v => v.toFixed(2)));
+
+    // Channel modal — volume + close
     $('volRange').addEventListener('input', (e) => {
         if (!modalChannelId) return;
         const ch = song.channels.find(c => c.id === modalChannelId);
