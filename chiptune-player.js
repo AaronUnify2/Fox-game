@@ -154,6 +154,7 @@ export class ChiptunePlayer {
         this.stepCallbacks = [];
         this._pulseWaves = {};
         this._noiseBuf = null;
+        this._chanNodes = {};   // per-channel output buses (with optional echo)
     }
 
     // Lazily create the AudioContext (must follow a user gesture on mobile).
@@ -176,6 +177,7 @@ export class ChiptunePlayer {
     }
 
     load(song) {
+        this._resetChannelNodes();
         this.song = normalizeSong(song);
     }
 
@@ -314,6 +316,64 @@ export class ChiptunePlayer {
         }
     }
 
+    // Per-channel output bus. Voices connect here instead of straight to the
+    // master, so each channel can have its own echo (a beat-synced delay line
+    // with feedback). Built lazily and cached per channel id.
+    _channelOut(ch) {
+        const cached = this._chanNodes[ch.id];
+        if (cached) return cached.input;
+
+        const ctx = this.ctx;
+        const input = ctx.createGain();
+        input.gain.value = 1;
+        input.connect(this.master);              // dry path (always full)
+        const rec = { input };
+
+        const beats = ch.echoBeats ?? 0.5;
+        const fb = Math.min(0.92, Math.max(0, ch.echoFeedback ?? 0.4));
+        const mix = Math.min(1, Math.max(0, ch.echoMix ?? 0.35));
+        if (ch.echo && beats > 0 && mix > 0) {
+            const secPerBeat = 60 / (this.song?.tempo || 120);
+            const dt = Math.min(4.9, Math.max(0.02, beats * secPerBeat));
+            const delay = ctx.createDelay(5.0);
+            delay.delayTime.value = dt;
+            const feedback = ctx.createGain();
+            feedback.gain.value = fb;
+            const damp = ctx.createBiquadFilter();    // darken each repeat
+            damp.type = 'lowpass';
+            damp.frequency.value = 3200;
+            const wet = ctx.createGain();
+            wet.gain.value = mix;
+
+            input.connect(delay);
+            delay.connect(damp);
+            damp.connect(feedback);
+            feedback.connect(delay);                  // feedback loop -> repeats
+            delay.connect(wet);
+            wet.connect(this.master);
+            Object.assign(rec, { delay, feedback, damp, wet });
+        }
+
+        this._chanNodes[ch.id] = rec;
+        return input;
+    }
+
+    _resetChannelNodes() {
+        if (this._chanNodes) {
+            for (const id in this._chanNodes) {
+                const r = this._chanNodes[id];
+                try {
+                    r.input && r.input.disconnect();
+                    r.delay && r.delay.disconnect();
+                    r.damp && r.damp.disconnect();
+                    r.feedback && r.feedback.disconnect();
+                    r.wet && r.wet.disconnect();
+                } catch (e) { /* ignore */ }
+            }
+        }
+        this._chanNodes = {};
+    }
+
     // Square wave of a given duty cycle, built from its Fourier series.
     _pulseWave(duty) {
         const key = duty.toFixed(3);
@@ -347,7 +407,7 @@ export class ChiptunePlayer {
         g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
 
         osc.connect(g);
-        g.connect(this.master);
+        g.connect(this._channelOut(ch));
         osc.start(time);
         osc.stop(time + dur + 0.02);
     }
@@ -374,7 +434,7 @@ export class ChiptunePlayer {
 
         const out = ctx.createGain();
         out.gain.value = vol / ampSum;   // keep the summed partials in range
-        out.connect(this.master);
+        out.connect(this._channelOut(ch));
 
         for (const p of partials) {
             const o = ctx.createOscillator();
@@ -403,7 +463,7 @@ export class ChiptunePlayer {
         const spread = ch.detune ?? 8;     // static ensemble detune (cents)
 
         const out = ctx.createGain();
-        out.connect(this.master);
+        out.connect(this._channelOut(ch));
         const mix = ctx.createGain();
         mix.gain.value = 0.5;              // sum of two saws -> ~unity
         const lp = ctx.createBiquadFilter();
@@ -461,7 +521,7 @@ export class ChiptunePlayer {
         const formants = VOWELS[ch.vowel] || VOWELS.ah;
 
         const out = ctx.createGain();
-        out.connect(this.master);
+        out.connect(this._channelOut(ch));
 
         const pre = ctx.createGain();
         pre.gain.value = 0.45;
@@ -533,7 +593,7 @@ export class ChiptunePlayer {
             const g = ctx.createGain();
             g.gain.setValueAtTime(vol, time);
             g.gain.exponentialRampToValueAtTime(0.0001, time + 0.18);
-            osc.connect(g); g.connect(this.master);
+            osc.connect(g); g.connect(this._channelOut(ch));
             osc.start(time); osc.stop(time + 0.2);
             return;
         }
@@ -553,7 +613,7 @@ export class ChiptunePlayer {
         }
         g.gain.setValueAtTime(vol, time);
         g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
-        src.connect(filter); filter.connect(g); g.connect(this.master);
+        src.connect(filter); filter.connect(g); g.connect(this._channelOut(ch));
         src.start(time); src.stop(time + dur + 0.02);
     }
 }
