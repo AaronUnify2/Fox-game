@@ -2,10 +2,17 @@
 // ECHOES OF THE OBELISK - Chiptune Player
 // Shared engine used by BOTH the song editor and the game.
 //
-// Authentic-ish NES channel set:
-//   pulse  (square w/ variable duty)  -> melody / harmony
-//   triangle                          -> bass
-//   noise  (filtered) + kick synth    -> drums/beat
+// Channel instruments:
+//   pulse    (square w/ variable duty)      -> melody / harmony
+//   triangle                                -> bass
+//   noise    (filtered) + kick synth        -> drums/beat
+//   bell     (inharmonic additive)          -> church / tubular bell
+//   strings  (detuned saws + vibrato)       -> sustained strings
+//   choir    (formant-filtered "aah")       -> synth choir pad
+//
+// Polyphony: a cell may be a single value (MIDI note, or drum index for
+// the noise channel), an ARRAY of such values (a chord / simultaneous
+// hits), or null. Bare values stay valid, so older songs load unchanged.
 //
 // Pure Web Audio. No dependencies. ES module.
 // ============================================
@@ -33,10 +40,38 @@ export function isBlackKey(m) {
 // Drum kit (noise channel cell values are indices into this list)
 export const DRUMS = ['Kick', 'Snare', 'Hat'];
 
+// Instrument types that are pitched (everything except 'noise')
+export const PITCHED_TYPES = ['pulse', 'triangle', 'bell', 'strings', 'choir'];
+
+// --- Cell helpers (polyphony) --------------------------------------
+
+// Normalize any cell value into an array of notes, or null if empty.
+// Accepts: number | number[] | null | undefined | [].
+export function cellNotes(cell) {
+    if (cell === null || cell === undefined) return null;
+    if (Array.isArray(cell)) {
+        const out = [];
+        for (const v of cell) {
+            if (v === null || v === undefined) continue;
+            if (!out.includes(v)) out.push(v); // de-dupe
+        }
+        return out.length ? out : null;
+    }
+    return [cell];
+}
+
+// Equal-power-ish gain compensation so a chord isn't N times louder.
+function chordGain(n) {
+    return n <= 1 ? 1 : Math.pow(n, -0.4);
+}
+
+const MAX_VOICES_PER_CELL = 8;
+
 // --- Song normalization --------------------------------------------
 
 // Returns a deep, fully-populated copy of a song with all defaults filled
 // and a patternsById lookup. Cell arrays are guaranteed length patternLength.
+// Cell *values* may be a number, an array of numbers, or null (polyphony).
 export function normalizeSong(song) {
     const s = JSON.parse(JSON.stringify(song || {}));
     s.version = s.version || 1;
@@ -183,17 +218,24 @@ export class ChiptunePlayer {
 
     toggle() { this.isPlaying ? this.stop() : this.play(); }
 
-    // Play a single cell immediately (editor tap feedback). value is a MIDI
-    // note for pitched channels, or a drum index for the noise channel.
+    // Play a single cell immediately (editor tap feedback). `value` may be a
+    // MIDI note, a drum index, or an array of either (a chord / multi-hit).
     preview(channelId, value) {
         if (!this.song) return;
         this._ensureContext();
         if (this.ctx.state === 'suspended') this.ctx.resume();
         const ch = this.song.channels.find(c => c.id === channelId);
         if (!ch) return;
+        const notes = cellNotes(value);
+        if (!notes) return;
         const t = this.ctx.currentTime + 0.01;
-        if (ch.type === 'noise') this._playNoise(ch, value, t);
-        else this._playTone(ch, value, t);
+        const voices = notes.slice(0, MAX_VOICES_PER_CELL);
+        if (ch.type === 'noise') {
+            for (const d of voices) this._playNoise(ch, d, t);
+        } else {
+            const gs = chordGain(voices.length);
+            for (const m of voices) this._playTone(ch, m, t, gs);
+        }
     }
 
     _order() { return this._overrideOrder || this.song.order; }
@@ -237,10 +279,16 @@ export class ChiptunePlayer {
         if (pattern) {
             for (const ch of this.song.channels) {
                 if (ch.muted) continue;
-                const cell = pattern.cells[ch.id] ? pattern.cells[ch.id][stepInPattern] : null;
-                if (cell === null || cell === undefined) continue;
-                if (ch.type === 'noise') this._playNoise(ch, cell, time);
-                else this._playTone(ch, cell, time);
+                const raw = pattern.cells[ch.id] ? pattern.cells[ch.id][stepInPattern] : null;
+                const notes = cellNotes(raw);
+                if (!notes) continue;
+                const voices = notes.slice(0, MAX_VOICES_PER_CELL);
+                if (ch.type === 'noise') {
+                    for (const d of voices) this._playNoise(ch, d, time);
+                } else {
+                    const gs = chordGain(voices.length);
+                    for (const m of voices) this._playTone(ch, m, time, gs);
+                }
             }
         }
         // UI playhead callback, fired at the right wall-clock moment
@@ -251,6 +299,18 @@ export class ChiptunePlayer {
                 if (!this.isPlaying) return;
                 for (const cb of this.stepCallbacks) cb(payload);
             }, delayMs);
+        }
+    }
+
+    // --- Instrument dispatch ---------------------------------------
+    _playTone(ch, midi, time, gainScale = 1) {
+        switch (ch.type) {
+            case 'bell':    return this._playBell(ch, midi, time, gainScale);
+            case 'strings': return this._playStrings(ch, midi, time, gainScale);
+            case 'choir':   return this._playChoir(ch, midi, time, gainScale);
+            case 'pulse':
+            case 'triangle':
+            default:        return this._playClassic(ch, midi, time, gainScale);
         }
     }
 
@@ -270,7 +330,8 @@ export class ChiptunePlayer {
         return wave;
     }
 
-    _playTone(ch, midi, time) {
+    // Classic NES voices: plucky pulse / triangle (clipped to the step).
+    _playClassic(ch, midi, time, gainScale) {
         const ctx = this.ctx;
         const dur = this._secondsPerStep() * 0.92;
         const osc = ctx.createOscillator();
@@ -279,7 +340,7 @@ export class ChiptunePlayer {
         osc.frequency.value = midiToFreq(midi);
 
         const g = ctx.createGain();
-        const vol = (ch.volume ?? 0.8);
+        const vol = (ch.volume ?? 0.8) * gainScale;
         g.gain.setValueAtTime(0.0001, time);
         g.gain.linearRampToValueAtTime(vol, time + 0.006);
         g.gain.setValueAtTime(vol, time + dur * 0.55);
@@ -289,6 +350,163 @@ export class ChiptunePlayer {
         g.connect(this.master);
         osc.start(time);
         osc.stop(time + dur + 0.02);
+    }
+
+    // Church / tubular bell: inharmonic sine partials, sharp attack, long
+    // resonant decay that rings out past the step. `ch.decay` scales length.
+    _playBell(ch, midi, time, gainScale) {
+        const ctx = this.ctx;
+        const f0 = midiToFreq(midi);
+        const vol = (ch.volume ?? 0.8) * gainScale;
+        const decayMul = ch.decay ?? 1;
+
+        // (ratio, amplitude, decay seconds) — hum + prime + minor-third tierce
+        // are what give a bell its bittersweet character.
+        const partials = [
+            { r: 0.5,  a: 0.40, d: 2.6 },  // hum tone (octave below)
+            { r: 1.0,  a: 1.00, d: 2.2 },  // prime / strike
+            { r: 1.2,  a: 0.55, d: 1.8 },  // tierce (minor third)
+            { r: 1.5,  a: 0.45, d: 1.5 },  // quint
+            { r: 2.0,  a: 0.45, d: 1.2 },  // nominal
+            { r: 3.01, a: 0.20, d: 0.7 }   // upper shimmer (slightly detuned)
+        ];
+        const ampSum = partials.reduce((s, p) => s + p.a, 0);
+
+        const out = ctx.createGain();
+        out.gain.value = vol / ampSum;   // keep the summed partials in range
+        out.connect(this.master);
+
+        for (const p of partials) {
+            const o = ctx.createOscillator();
+            o.type = 'sine';
+            o.frequency.value = f0 * p.r;
+            const g = ctx.createGain();
+            const d = Math.max(0.05, p.d * decayMul);
+            g.gain.setValueAtTime(0.0001, time);
+            g.gain.linearRampToValueAtTime(p.a, time + 0.002);
+            g.gain.exponentialRampToValueAtTime(0.0001, time + 0.002 + d);
+            o.connect(g); g.connect(out);
+            o.start(time);
+            o.stop(time + 0.002 + d + 0.05);
+        }
+    }
+
+    // Strings: two detuned sawtooths through a gentle lowpass, slow attack,
+    // sustain across the step, soft release tail, subtle vibrato.
+    _playStrings(ch, midi, time, gainScale) {
+        const ctx = this.ctx;
+        const f = midiToFreq(midi);
+        const vol = (ch.volume ?? 0.8) * gainScale;
+        const dur = this._secondsPerStep();
+        const attack = ch.attack ?? 0.08;
+        const release = ch.release ?? 0.25;
+        const spread = ch.detune ?? 8;     // static ensemble detune (cents)
+
+        const out = ctx.createGain();
+        out.connect(this.master);
+        const mix = ctx.createGain();
+        mix.gain.value = 0.5;              // sum of two saws -> ~unity
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = Math.min(8000, f * 6 + 1400);
+        lp.Q.value = 0.4;
+        mix.connect(lp); lp.connect(out);
+
+        // shared vibrato LFO
+        const lfo = ctx.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 5.2;
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = 6;            // vibrato depth (cents)
+        lfo.connect(lfoGain);
+
+        const oscs = [];
+        for (const dt of [-spread, spread]) {
+            const o = ctx.createOscillator();
+            o.type = 'sawtooth';
+            o.frequency.value = f;
+            o.detune.value = dt;
+            lfoGain.connect(o.detune);
+            o.connect(mix);
+            oscs.push(o);
+        }
+
+        const holdEnd = time + Math.max(dur, attack + 0.02);
+        out.gain.setValueAtTime(0.0001, time);
+        out.gain.linearRampToValueAtTime(vol, time + attack);
+        out.gain.setValueAtTime(vol, holdEnd);
+        out.gain.exponentialRampToValueAtTime(0.0001, holdEnd + release);
+
+        const end = holdEnd + release + 0.05;
+        lfo.start(time); lfo.stop(end);
+        oscs.forEach(o => { o.start(time); o.stop(end); });
+    }
+
+    // Choir "aah": detuned saws shaped by vocal-formant bandpass filters,
+    // slow attack, sustain + release tail, gentle vibrato.
+    _playChoir(ch, midi, time, gainScale) {
+        const ctx = this.ctx;
+        const f = midiToFreq(midi);
+        const vol = (ch.volume ?? 0.8) * gainScale;
+        const dur = this._secondsPerStep();
+        const attack = ch.attack ?? 0.06;
+        const release = ch.release ?? 0.30;
+
+        // formant tables (freq, amp, Q) for a few vowels
+        const VOWELS = {
+            ah: [[800, 0.50, 8], [1150, 0.35, 9], [2900, 0.20, 10]],
+            oo: [[300, 0.50, 8], [870, 0.28, 9],  [2250, 0.12, 11]],
+            ee: [[350, 0.50, 8], [2000, 0.30, 10], [2800, 0.18, 11]]
+        };
+        const formants = VOWELS[ch.vowel] || VOWELS.ah;
+
+        const out = ctx.createGain();
+        out.connect(this.master);
+
+        const pre = ctx.createGain();
+        pre.gain.value = 0.45;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = 4200; lp.Q.value = 0.3;
+        pre.connect(lp);
+
+        for (const [freq, amp, q] of formants) {
+            const bp = ctx.createBiquadFilter();
+            bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q;
+            const fg = ctx.createGain(); fg.gain.value = amp;
+            lp.connect(bp); bp.connect(fg); fg.connect(out);
+        }
+        // a touch of dry source for body
+        const dry = ctx.createGain(); dry.gain.value = 0.10;
+        lp.connect(dry); dry.connect(out);
+
+        // gentle vibrato (swells in)
+        const lfo = ctx.createOscillator();
+        lfo.type = 'sine'; lfo.frequency.value = 5.0;
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.setValueAtTime(0, time);
+        lfoGain.gain.linearRampToValueAtTime(7, time + Math.min(0.4, dur));
+        lfo.connect(lfoGain);
+
+        const oscs = [];
+        for (const dt of [-6, 6]) {
+            const o = ctx.createOscillator();
+            o.type = 'sawtooth';
+            o.frequency.value = f;
+            o.detune.value = dt;
+            lfoGain.connect(o.detune);
+            o.connect(pre);
+            oscs.push(o);
+        }
+
+        const holdEnd = time + Math.max(dur, attack + 0.02);
+        out.gain.setValueAtTime(0.0001, time);
+        out.gain.linearRampToValueAtTime(vol, time + attack);
+        out.gain.setValueAtTime(vol, holdEnd);
+        out.gain.exponentialRampToValueAtTime(0.0001, holdEnd + release);
+
+        const end = holdEnd + release + 0.05;
+        lfo.start(time); lfo.stop(end);
+        oscs.forEach(o => { o.start(time); o.stop(end); });
     }
 
     _noiseBuffer() {
