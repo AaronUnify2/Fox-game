@@ -89,7 +89,12 @@ export async function initEntities() {
 }
 
 export function clearPlatformCache() {
+    // Clears the static-geometry caches; called right before each loadFloor
+    // (the dungeon scene object is reused across floors, so identity checks
+    // alone can't detect a rebuild).
     platformsCache = [];
+    wallsCache = null;
+    wallsCacheScene = null;
 }
 
 // ============================================
@@ -360,12 +365,20 @@ function carryOnRing() {
 
 // Collect the solid (isWall) meshes in a scene once per frame, so several
 // entities can be resolved against them without re-traversing per entity.
+// Walls are static per floor (gates only flip their isWall flag, which the
+// collision helpers re-check at use time), so collect them once per floor /
+// scene instead of running two full scene traversals every frame.
+let wallsCache = null;
+let wallsCacheScene = null;
 function collectWalls(scene) {
+    if (!scene) return [];
+    if (wallsCacheScene === scene && wallsCache) return wallsCache;
     const walls = [];
-    if (!scene) return walls;
     scene.traverse(o => {
         if (o.isMesh && o.userData?.isWall && o.geometry?.parameters) walls.push(o);
     });
+    wallsCache = walls;
+    wallsCacheScene = scene;
     return walls;
 }
 
