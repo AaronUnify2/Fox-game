@@ -14,6 +14,7 @@ import {
     getProjectiles,
     getEnemies,
     hurtPlayer,
+    disposeObject3D,
 } from './entities.js';
 
 // ---------------------------------------------------------------------------
@@ -104,7 +105,6 @@ function buildSplitter(enemy, { bodyColor }) {
         n.position.set((Math.random() - 0.5) * 0.4, 0.5 + (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4);
         enemy.add(n);
     }
-    enemy.add(new THREE.PointLight(CELL, 0.4, 4).translateY(0.5));
 }
 
 function updateSplitter(e, delta, dist, toPlayer) {
@@ -166,7 +166,6 @@ function buildWraith(enemy, { bodyColor }) {
         eye.position.set(x, 1.92, 0.22);
         enemy.add(eye);
     });
-    enemy.add(new THREE.PointLight(GHOST, 0.4, 5).translateY(1.3));
 }
 
 function updateWraith(e, delta, dist, toPlayer) {
@@ -230,7 +229,6 @@ function buildLurker(enemy, { bodyColor }) {
         eye.position.set(x, 0.65, 0.4);
         enemy.add(eye);
     });
-    enemy.add(new THREE.PointLight(SHADE, 0.3, 3).translateY(0.6));
 }
 
 function updateLurker(e, delta, dist, toPlayer) {
@@ -312,7 +310,7 @@ function updateAmalgam(boss, delta) {
                 break;
             }
         }
-        if (core.userData.hp <= 0) { getDungeonScene().remove(core); d.cores.splice(i, 1); }
+        if (core.userData.hp <= 0) { getDungeonScene().remove(core); disposeObject3D(core); d.cores.splice(i, 1); }
         else alive++;
     }
     // Armor scales with cores remaining: 3 -> 0.75 (chassis takes 25%), 0 -> exposed.
@@ -451,7 +449,7 @@ function updateWarden(boss, delta) {
             player.userData.invulnerable = true;
             player.userData.invulnerableTimer = 0.5;
         }
-        if (img.userData.life <= 0) { getDungeonScene().remove(img); d.trails.splice(i, 1); }
+        if (img.userData.life <= 0) { getDungeonScene().remove(img); disposeObject3D(img); d.trails.splice(i, 1); }
     }
 }
 
