@@ -33,6 +33,33 @@ let currentBoss = null;
 let pillarBoss = null;
 const bossRegistry = {};   // type -> { create, update }, populated by entities.js + the stage files
 const enemyRegistry = {};  // type -> { config, build, update, onDamage }, populated by the stage files
+
+// ---- Shared GPU resources & disposal ----
+// High-churn transients (projectiles, orbs, hit particles) reuse one geometry/
+// material per kind instead of allocating fresh ones. Shared resources are
+// flagged so teardown never disposes them; everything else is disposed when
+// removed, which stops the GPU-memory creep that degrades long mobile sessions.
+const sharedGeoCache = {};
+const sharedMatCache = {};
+function sharedGeo(key, make) {
+    if (!sharedGeoCache[key]) { sharedGeoCache[key] = make(); sharedGeoCache[key].userData.shared = true; }
+    return sharedGeoCache[key];
+}
+function sharedMat(key, make) {
+    if (!sharedMatCache[key]) { sharedMatCache[key] = make(); sharedMatCache[key].userData.shared = true; }
+    return sharedMatCache[key];
+}
+// Dispose an object's owned (non-shared) geometries and materials. Safe to call
+// repeatedly; never touches shared/cached resources.
+export function disposeObject3D(root) {
+    root.traverse(o => {
+        if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
+        if (o.material) {
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach(m => { if (!m.userData?.shared) m.dispose(); });
+        }
+    });
+}
 let xpGained = 0;
 let goldGained = 0;
 let materialsGained = {};   // material id -> count collected this floor (banks on completion)
@@ -147,6 +174,7 @@ function createPlayer() {
         gravity: -25,
         invulnerable: false,
         invulnerableTimer: 0,
+        persistent: true,    // survives floor teardown — never dispose its resources
         standingRing: null   // the rotating arc the player is currently riding
     };
     
@@ -580,17 +608,19 @@ function createProjectile(position, angle, type) {
     };
     const cfg = configs[type];
     
-    const geom = new THREE.SphereGeometry(cfg.size, 8, 8);
-    const mat = new THREE.MeshBasicMaterial({ color: cfg.color, transparent: true, opacity: 0.9 });
+    const geom = sharedGeo('proj_' + type, () => new THREE.SphereGeometry(cfg.size, 8, 8));
+    const mat = sharedMat('proj_' + type, () => new THREE.MeshBasicMaterial({ color: cfg.color, transparent: true, opacity: 0.9 }));
     const proj = new THREE.Mesh(geom, mat);
     
     proj.position.copy(position);
     proj.position.y += 1.2;
     
-    const glowGeom = new THREE.SphereGeometry(cfg.size * 1.5, 8, 8);
-    const glowMat = new THREE.MeshBasicMaterial({ color: cfg.color, transparent: true, opacity: 0.3 });
+    const glowGeom = sharedGeo('projGlow_' + type, () => new THREE.SphereGeometry(cfg.size * 1.5, 8, 8));
+    const glowMat = sharedMat('projGlow_' + type, () => new THREE.MeshBasicMaterial({ color: cfg.color, transparent: true, opacity: 0.3 }));
     proj.add(new THREE.Mesh(glowGeom, glowMat));
-    proj.add(new THREE.PointLight(cfg.color, 0.5, 3));
+    // (no per-bolt PointLight: with spread upgrades each volley multiplied the
+    // scene's dynamic lights, a large mobile fragment cost; the unlit glow shells
+    // read the same)
     
     const cosP = Math.cos(aimPitch);
     proj.userData = {
@@ -687,28 +717,65 @@ function updateProjectiles(delta) {
     }
 }
 
+// Pooled hit particles: fixed pool, stepped by the main loop (real delta,
+// pauses with the game) instead of dozens of private rAF chains. Pool meshes
+// share one geometry and keep their own reusable material (flagged shared so
+// scene teardown never disposes them).
+const PARTICLE_POOL_SIZE = 48;
+const particlePool = [];
+function getParticleSlot() {
+    for (const p of particlePool) if (!p.active) return p;
+    if (particlePool.length < PARTICLE_POOL_SIZE) {
+        const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+        mat.userData.shared = true;
+        const mesh = new THREE.Mesh(sharedGeo('hitParticle', () => new THREE.SphereGeometry(0.05, 4, 4)), mat);
+        mesh.userData.persistent = true;
+        const p = { mesh, vel: new THREE.Vector3(), life: 0, maxLife: 0.3, active: false };
+        particlePool.push(p);
+        return p;
+    }
+    // Pool exhausted: steal the oldest (shortest remaining life).
+    let oldest = particlePool[0];
+    for (const p of particlePool) if (p.life < oldest.life) oldest = p;
+    return oldest;
+}
+
 export function createHitEffect(position, color) {
     const scene = getDungeonScene();
     if (!scene) return;
-    
     for (let i = 0; i < 6; i++) {
-        const geom = new THREE.SphereGeometry(0.05, 4, 4);
-        const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 });
-        const p = new THREE.Mesh(geom, mat);
-        p.position.copy(position);
-        p.userData.vel = new THREE.Vector3((Math.random() - 0.5) * 5, Math.random() * 3, (Math.random() - 0.5) * 5);
-        p.userData.life = 0.3;
-        scene.add(p);
-        
-        const animate = () => {
-            p.userData.life -= 0.016;
-            if (p.userData.life <= 0) { scene.remove(p); return; }
-            p.position.add(p.userData.vel.clone().multiplyScalar(0.016));
-            p.userData.vel.y -= 10 * 0.016;
-            p.material.opacity = p.userData.life / 0.3;
-            requestAnimationFrame(animate);
-        };
-        animate();
+        const p = getParticleSlot();
+        p.mesh.material.color.setHex(color);
+        p.mesh.material.opacity = 0.8;
+        p.mesh.position.copy(position);
+        p.vel.set((Math.random() - 0.5) * 5, Math.random() * 3, (Math.random() - 0.5) * 5);
+        p.life = p.maxLife;
+        p.active = true;
+        scene.add(p.mesh);
+    }
+}
+
+function updateParticles(delta) {
+    for (const p of particlePool) {
+        if (!p.active) continue;
+        p.life -= delta;
+        if (p.life <= 0) {
+            p.mesh.parent?.remove(p.mesh);
+            p.active = false;
+            continue;
+        }
+        p.mesh.position.x += p.vel.x * delta;
+        p.mesh.position.y += p.vel.y * delta;
+        p.mesh.position.z += p.vel.z * delta;
+        p.vel.y -= 10 * delta;
+        p.mesh.material.opacity = (p.life / p.maxLife) * 0.8;
+    }
+}
+
+function clearParticles() {
+    for (const p of particlePool) {
+        p.mesh.parent?.remove(p.mesh);
+        p.active = false;
     }
 }
 
@@ -792,7 +859,7 @@ export function createEnemy(type, position, floor) {
         const eye = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), new THREE.MeshBasicMaterial({ color: glowColor }));
         eye.position.z = 0.35;
         enemy.add(eye);
-        enemy.add(new THREE.PointLight(glowColor, 0.3, 3));
+        // (no per-drone PointLight: grunt lights multiply per-pixel lighting cost)
     } else if (type === 'walker') {
         const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 1), new THREE.MeshStandardMaterial({ color: bodyColor, metalness: 0.7 }));
         body.position.y = 1.2;
@@ -960,8 +1027,8 @@ export function createEnemyProjectile(origin, target, damage, color, speed = 8) 
     if (!scene) return;
     
     const dir = new THREE.Vector3().subVectors(target, origin).normalize();
-    const geom = new THREE.SphereGeometry(0.12, 6, 6);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 });
+    const geom = sharedGeo('eproj', () => new THREE.SphereGeometry(0.12, 6, 6));
+    const mat = sharedMat('eproj_' + color, () => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 }));
     const proj = new THREE.Mesh(geom, mat);
     proj.position.copy(origin);
     proj.position.y = Math.max(proj.position.y, 1);
@@ -1061,6 +1128,7 @@ function damageEnemy(enemy, damage, source = 'magic', fromPos = null) {
             // quietly with no drop/XP — the spawned children carry the reward instead.
             if (reg?.onDeath && reg.onDeath(enemy, source, method)) {
                 getDungeonScene()?.remove(enemy);
+                disposeObject3D(enemy);
                 const j = enemies.indexOf(enemy);
                 if (j > -1) enemies.splice(j, 1);
                 return;
@@ -1091,6 +1159,7 @@ function destroyEnemy(enemy, index, giveXP) {
     
     createHitEffect(enemy.position.clone(), 0xff8800);
     scene.remove(enemy);
+    disposeObject3D(enemy);
     enemies.splice(index, 1);
 }
 
@@ -1107,8 +1176,8 @@ function spawnMaterialOrb(position, mat) {
     const scene = getDungeonScene();
     if (!scene) return;
     const orb = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.38, 0),
-        new THREE.MeshStandardMaterial({ color: mat.color, emissive: mat.color, emissiveIntensity: 1.0, metalness: 0.6, roughness: 0.25 })
+        sharedGeo('orbMaterial', () => new THREE.OctahedronGeometry(0.38, 0)),
+        sharedMat('orbMat_' + mat.id, () => new THREE.MeshStandardMaterial({ color: mat.color, emissive: mat.color, emissiveIntensity: 1.0, metalness: 0.6, roughness: 0.25 }))
     );
     orb.position.set(position.x, 1.2, position.z);
     orb.userData = { mat, vy: 3.5, spin: 3 };
@@ -1130,9 +1199,10 @@ function spawnOrbs(position, xpTotal, goldTotal) {
         for (let i = 0; i < count; i++) {
             const value = base + (rem-- > 0 ? 1 : 0);
             if (value <= 0) continue;
+            const key = isGold ? 'orbGold' : 'orbXP';
             const orb = new THREE.Mesh(
-                new THREE.IcosahedronGeometry(isGold ? 0.3 : 0.24, 0),
-                new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.9, metalness: 0.4, roughness: 0.3 })
+                sharedGeo(key, () => new THREE.IcosahedronGeometry(isGold ? 0.3 : 0.24, 0)),
+                sharedMat(key, () => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.9, metalness: 0.4, roughness: 0.3 }))
             );
             const a = Math.random() * Math.PI * 2;
             const r = 0.3 + Math.random() * 1.1;
@@ -1225,13 +1295,14 @@ export function spawnEnemiesAt(cx, cz, floor, count) {
 
 export function clearAllEnemies() {
     const scene = getDungeonScene();
-    enemies.forEach(e => scene?.remove(e));
+    enemies.forEach(e => { scene?.remove(e); disposeObject3D(e); });
     enemies = [];
-    projectiles.forEach(p => scene?.remove(p));
+    projectiles.forEach(p => scene?.remove(p));       // shared resources: remove only
     projectiles = [];
-    enemyProjectiles.forEach(p => scene?.remove(p));
+    enemyProjectiles.forEach(p => scene?.remove(p));  // shared resources: remove only
     enemyProjectiles = [];
     clearOrbs();
+    clearParticles();
 }
 
 export function getEnemies() { return enemies; }
@@ -1442,13 +1513,14 @@ function destroyBoss() {
     const xpVals = { sentinel: 100, hollow: 150, dreamer: 200, emperor: 500, amalgam: 600, progenitor: 700, warden: 850 };
     const bossXP = xpVals[currentBoss.userData.type] || 100;
     spawnOrbs(currentBoss.position, bossXP, Math.round(bossXP / 4));
-    if (currentBoss.userData.drones) currentBoss.userData.drones.forEach(d => scene.remove(d));
-    if (currentBoss.userData.mirrors) currentBoss.userData.mirrors.forEach(m => scene.remove(m));
-    if (currentBoss.userData.zones) currentBoss.userData.zones.forEach(z => scene.remove(z));
-    if (currentBoss.userData.trails) currentBoss.userData.trails.forEach(t => scene.remove(t));
-    if (currentBoss.userData.cores) currentBoss.userData.cores.forEach(c => scene.remove(c));
+    if (currentBoss.userData.drones) currentBoss.userData.drones.forEach(d => { scene.remove(d); disposeObject3D(d); });
+    if (currentBoss.userData.mirrors) currentBoss.userData.mirrors.forEach(m => { scene.remove(m); disposeObject3D(m); });
+    if (currentBoss.userData.zones) currentBoss.userData.zones.forEach(z => { scene.remove(z); disposeObject3D(z); });
+    if (currentBoss.userData.trails) currentBoss.userData.trails.forEach(t => { scene.remove(t); disposeObject3D(t); });
+    if (currentBoss.userData.cores) currentBoss.userData.cores.forEach(c => { scene.remove(c); disposeObject3D(c); });
     createHitEffect(currentBoss.position.clone(), 0xffffff);
     scene.remove(currentBoss);
+    disposeObject3D(currentBoss);
     currentBoss = null;
 }
 
@@ -1462,11 +1534,12 @@ export function hurtPlayer(amount) { gameBridge.damagePlayer?.(amount); }
 export function disposeBosses() {
     const scene = getDungeonScene();
     if (currentBoss) {
-        ['drones', 'mirrors', 'zones', 'trails'].forEach(k => { if (currentBoss.userData[k]) currentBoss.userData[k].forEach(x => scene?.remove(x)); });
+        ['drones', 'mirrors', 'zones', 'trails', 'cores'].forEach(k => { if (currentBoss.userData[k]) currentBoss.userData[k].forEach(x => { scene?.remove(x); disposeObject3D(x); }); });
         scene?.remove(currentBoss);
+        disposeObject3D(currentBoss);
         currentBoss = null;
     }
-    if (pillarBoss) { scene?.remove(pillarBoss); pillarBoss = null; }
+    if (pillarBoss) { scene?.remove(pillarBoss); disposeObject3D(pillarBoss); pillarBoss = null; }
 }
 
 // ============================================
@@ -1714,6 +1787,7 @@ export function updateEntities(delta, gameData, inputState) {
     updateEnemyProjectiles(delta);
     updateEnemies(delta);
     updateOrbs(delta);
+    updateParticles(delta);
     updateBoss(delta);
     updatePillarBoss(delta);
 }
