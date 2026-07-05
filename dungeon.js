@@ -59,9 +59,20 @@ export function getRoomData(roomName) {
 export function disposeDungeon() {
     rotatingRings = [];
     gates = {};
-    // Clear scene
+    // Clear scene AND release GPU resources. Skips anything flagged persistent
+    // (the player rig, pooled particles) and any shared/cached geometry or
+    // material owned by the entities module. Double-dispose is harmless.
     while (dungeonScene.children.length > 0) {
-        dungeonScene.remove(dungeonScene.children[0]);
+        const child = dungeonScene.children[0];
+        dungeonScene.remove(child);
+        if (child.userData?.persistent) continue;
+        child.traverse(o => {
+            if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
+            if (o.material) {
+                const mats = Array.isArray(o.material) ? o.material : [o.material];
+                mats.forEach(m => { if (!m.userData?.shared) m.dispose(); });
+            }
+        });
     }
 }
 
@@ -585,7 +596,7 @@ function createHallway(x1, z1, x2, z2, theme) {
         wall.rotation.y = -angle;
         wall.position.x += Math.cos(angle + Math.PI / 2) * 3 * side;
         wall.position.z += Math.sin(angle + Math.PI / 2) * 3 * side;
-        wall.castShadow = true;
+        wall.castShadow = false   // walls: receive-only (shadow-map cost);
         wall.receiveShadow = true;
         wall.userData = { isWall: true };
         dungeonScene.add(wall);
@@ -657,7 +668,7 @@ function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
         const wall = new THREE.Mesh(new THREE.BoxGeometry(segLen, 24, 0.6), wallMat);
         wall.position.set(cx + Math.cos(mid) * radius, 12, cz + Math.sin(mid) * radius);
         wall.rotation.y = -mid + Math.PI / 2; // lay the segment tangent to the ring
-        wall.castShadow = true;
+        wall.castShadow = false   // walls: receive-only (shadow-map cost);
         wall.receiveShadow = true;
         wall.userData = { isWall: true };
         dungeonScene.add(wall);
@@ -695,7 +706,7 @@ function createRingWalls(cx, cz, radius, theme, openings = [], gapWidth = 8) {
             const jamb = new THREE.Mesh(new THREE.BoxGeometry(len + 0.8, 24, 0.7), wallMat);
             jamb.position.set((best.x + corrX) / 2, 12, (best.z + corrZ) / 2);
             jamb.rotation.y = -Math.atan2(jz, jx);
-            jamb.castShadow = true;
+            jamb.castShadow = false   // walls: receive-only (shadow-map cost);
             jamb.receiveShadow = true;
             jamb.userData = { isWall: true };
             dungeonScene.add(jamb);
@@ -727,7 +738,7 @@ function createRectWalls(cx, cz, halfSize, theme, gapSide = null) {
             wallMat
         );
         wall.position.set(...cfg.pos);
-        wall.castShadow = true;
+        wall.castShadow = false   // walls: receive-only (shadow-map cost);
         wall.receiveShadow = true;
         wall.userData = { isWall: true };
         dungeonScene.add(wall);
@@ -747,7 +758,7 @@ function createRectWalls(cx, cz, halfSize, theme, gapSide = null) {
             if (segLen < 0.1) return;
             const seg = new THREE.Mesh(new THREE.BoxGeometry(0.5, 24, segLen), jambMat);
             seg.position.set(wx, 12, cz + (inner + outer) / 2);
-            seg.castShadow = true;
+            seg.castShadow = false   // walls: receive-only (shadow-map cost);
             seg.receiveShadow = true;
             seg.userData = { isWall: true };
             dungeonScene.add(seg);
