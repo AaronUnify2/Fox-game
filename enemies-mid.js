@@ -12,6 +12,7 @@ import {
     createEnemyProjectile,
     getProjectiles,
     hurtPlayer,
+    disposeObject3D,
 } from './entities.js';
 
 // ---------------------------------------------------------------------------
@@ -76,6 +77,7 @@ function updateHollow(boss, delta) {
         }
         if (tr.userData.lifespan <= 0) {
             getDungeonScene().remove(tr);
+            disposeObject3D(tr);
             d.trails.splice(i, 1);
         }
     }
@@ -169,7 +171,9 @@ function updateDreamer(boss, delta) {
     if (d.mirrorCooldown <= 0 && d.mirrors.length < d.tier) {
         const mirror = boss.clone();
         mirror.scale.setScalar(0.8);
-        mirror.traverse(c => { if (c.material) { c.material = c.material.clone(); c.material.opacity *= 0.6; } });
+        const clonedLights = [];
+        mirror.traverse(c => { if (c.isLight) clonedLights.push(c); else if (c.material) { c.material = c.material.clone(); c.material.opacity *= 0.6; } });
+        clonedLights.forEach(l => l.parent?.remove(l));   // no duplicated boss lights
         mirror.userData = { health: 50 + d.tier * 20, lifespan: 15, attackCooldown: 2 };
         getDungeonScene().add(mirror);
         d.mirrors.push(mirror);
@@ -203,6 +207,9 @@ function updateDreamer(boss, delta) {
         }
         if (m.userData.lifespan <= 0 || m.userData.health <= 0) {
             getDungeonScene().remove(m);
+            // Dispose only the cloned materials; the geometries are shared by
+            // reference with the living boss, so they must survive.
+            m.traverse(c => { if (c.material && !c.material.userData?.shared) c.material.dispose(); });
             d.mirrors.splice(i, 1);
         }
     }
@@ -236,6 +243,7 @@ function updateDreamer(boss, delta) {
         }
         if (z.userData.lifespan <= 0) {
             getDungeonScene().remove(z);
+            disposeObject3D(z);
             d.zones.splice(i, 1);
         }
     }
@@ -264,7 +272,6 @@ function buildHybrid(enemy, { bodyColor }) {
     core.name = 'hybridCore';
     core.position.set(0, 1.0, 0.42);   // exposed at the front
     enemy.add(core);
-    enemy.add(new THREE.PointLight(DREAM, 0.8, 6).translateY(1.1));
 }
 
 function updateHybrid(e, delta, dist, toPlayer) {
@@ -300,7 +307,6 @@ function buildBulwark(enemy, { bodyColor }) {
     shield.name = 'shield';
     enemy.add(shield);
     enemy.add(new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.05, 6, 4), new THREE.MeshStandardMaterial({ color: ARC, emissive: ARC, emissiveIntensity: 0.5 })).translateY(1.0).translateZ(0.7));
-    enemy.add(new THREE.PointLight(ARC, 0.5, 5).translateY(1).translateZ(0.5));
 }
 
 function updateBulwark(e, delta, dist, toPlayer) {
@@ -353,7 +359,6 @@ function buildCapacitor(enemy, { bodyColor }) {
     orb.position.y = 1.7;
     orb.name = 'capOrb';
     enemy.add(orb);
-    enemy.add(new THREE.PointLight(ARC, 0.7, 6).translateY(1.7));
 }
 
 function updateCapacitor(e, delta, dist, toPlayer) {
